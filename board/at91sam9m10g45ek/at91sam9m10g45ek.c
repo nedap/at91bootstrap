@@ -133,10 +133,6 @@ static void recovery_buttons_hw_init(void)
 #endif /* #if defined(CONFIG_NANDFLASH_RECOVERY) || defined(CONFIG_DATAFLASH_RECOVERY) */
 
 #ifdef CONFIG_USER_HW_INIT
-//*----------------------------------------------------------------------------
-//* \fn    nedap_usb_fix
-//* \brief This function fixes an issue with the usb
-//*----------------------------------------------------------------------------*/
 static void nedap_usb_fix(void)
 {
 	unsigned int lock = 1000000;
@@ -150,10 +146,6 @@ static void nedap_usb_fix(void)
 #ifdef CONFIG_USER_HW_INIT
 #include "arch/at91_spi.h"
 
-//*----------------------------------------------------------------------------
-//* \fn    switch_hw_init
-//* \brief This function performs SWITCH HW initialization /dev/spidev1.2
-//*----------------------------------------------------------------------------*/
 static void nedap_switch_init(void)
 {
 	/* SPI chip select register */
