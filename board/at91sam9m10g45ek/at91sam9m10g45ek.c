@@ -205,6 +205,17 @@ static void nedap_switch_init(void)
 }
 #endif /* #ifdef CONFIG_USER_HW_INIT */
 
+#ifdef CONFIG_USER_HW_INIT
+static void nedap_enable_icache(void)
+{
+	unsigned int value;
+
+	__asm__("mrc p15, 0, %0, c1, c0, 0" : "=r" (value));
+	value |= (1<<12);
+	__asm__("mcr p15, 0, %0, c1, c0, 0" : : "r" (value));
+}
+#endif /* #ifdef CONFIG_USER_HW_INIT */
+
 #ifdef CONFIG_HW_INIT
 void hw_init(void)
 {
@@ -247,6 +258,7 @@ void hw_init(void)
 
 #ifdef CONFIG_USER_HW_INIT
 	/* do some special init */
+	nedap_enable_icache();
 	nedap_usb_fix();
 	nedap_switch_init();
 #endif

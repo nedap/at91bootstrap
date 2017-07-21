@@ -1,6 +1,6 @@
 #
 # Automatically generated make config: don't edit
-# Tue Jul 18 16:07:22 2017
+# Fri Jul 21 10:18:41 2017
 #
 HAVE_DOT_CONFIG=y
 # CONFIG_AT91SAM9260EK is not set
@@ -185,7 +185,7 @@ CONFIG_DEBUG=y
 CONFIG_DEBUG_INFO=y
 # CONFIG_DEBUG_LOUD is not set
 # CONFIG_DEBUG_VERY_LOUD is not set
-CONFIG_THUMB=y
+# CONFIG_THUMB is not set
 # CONFIG_DISABLE_WATCHDOG is not set
 
 #
