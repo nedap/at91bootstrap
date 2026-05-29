@@ -1,3 +1,30 @@
+# Nedap AT91Bootstrap Fork
+
+This fork tracks the upstream `linux4sam/at91bootstrap` `at91bootstrap-3.x`
+branch and carries the Nedap9G45 NAND boot configuration used by Renos.
+
+The Nedap-specific board support lives in `board/nedap9g45/`.
+
+## Nedap9G45 Build
+
+Use the normal AT91Bootstrap build flow with the Nedap9G45 defconfig:
+
+```sh
+make CROSS_COMPILE=arm-none-eabi- nedap9g45nf_uboot_defconfig
+make CROSS_COMPILE=arm-none-eabi-
+```
+
+The expected output is:
+
+```text
+binaries/nedap9g45-nandflashboot-uboot-3.10.4.bin
+```
+
+Renos Yocto builds consume this repository through the `at91bootstrap_%.bbappend`
+recipe and pin an exact commit on `at91bootstrap-3.x`.
+
+## Upstream Documentation
+
 # AT91Bootstrap Project
 
 AT91Bootstrap is the 2nd level bootloader for Microchip microprocessors (aka AT91).
