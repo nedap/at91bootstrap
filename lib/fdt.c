@@ -183,6 +183,10 @@ static int of_get_token_nextoffset(void *blob,
 			cell++;
 			offset++;
 		} while (*cell != '\0');
+		/* the \0 is part of the node name, hence offset must be updated to the 
+		* position past the \0.
+		*/
+		++offset;
 	} else if (tag == OF_DT_TOKEN_PROP) {
 		/* the property value size */
 		plen = (unsigned int *)of_dt_struct_offset(blob, offset);
@@ -246,7 +250,7 @@ static int of_get_nextnode_offset(void *blob,
 	return 0;
 }
 
-static int of_get_node_offset(void *blob, char *name, int *offset)
+static int of_get_node_offset(void *blob, const char *name, int *offset)
 {
 	int start_offset = 0;
 	int nodeoffset = 0;
@@ -365,7 +369,7 @@ static int of_get_next_property_offset(void *blob,
 
 static int of_get_property_offset_by_name(void *blob,
 					unsigned int nodeoffset,
-					char *name,
+					const char *name,
 					int *offset)
 {
 	unsigned int nameoffset;
@@ -517,7 +521,7 @@ static int of_update_property_value(void *blob,
 
 static int of_set_property(void *blob,
 				int nodeoffset,
-				char *property_name,
+				const char *property_name,
 				void *value,
 				int valuelen)
 {
@@ -568,7 +572,7 @@ int fixup_chosen_node(void *blob, char *bootargs)
 
 	ret = of_get_node_offset(blob, "chosen", &nodeoffset);
 	if (ret) {
-		dbg_info("DT: doesn't support add node\n");
+		dbg_info("DT: doesn't support add node (chosen)\n");
 		return ret;
 	}
 
@@ -592,16 +596,17 @@ int fixup_chosen_node(void *blob, char *bootargs)
  */
 int fixup_memory_node(void *blob,
 			unsigned int *mem_bank,
+			unsigned int *mem_bank2,
 			unsigned int *mem_size)
 {
 	int nodeoffset;
-	unsigned int data[2];
+	unsigned int data[4];
 	int valuelen;
 	int ret;
 
 	ret = of_get_node_offset(blob, "memory", &nodeoffset);
 	if (ret) {
-		dbg_info("DT: doesn't support add node\n");
+		dbg_info("DT: doesn't support add node (memory)\n");
 		return ret;
 	}
 
@@ -618,10 +623,14 @@ int fixup_memory_node(void *blob,
 	}
 
 	/* set "reg" property */
-	valuelen = 8;
 	data[0] = swap_uint32(*mem_bank);
 	data[1] = swap_uint32(*mem_size);
-
+	valuelen = 8;
+	if (*mem_bank2) {
+		data[2] = swap_uint32(*mem_bank2);
+		data[3] = swap_uint32(*mem_size);
+		valuelen = 16;
+	}
 	ret = of_set_property(blob, nodeoffset, "reg", data, valuelen);
 	if (ret) {
 		dbg_info("DT: could not set reg property\n");

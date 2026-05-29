@@ -38,7 +38,7 @@ int load_dataflash(struct image_info *image)
 #endif
 
 #ifdef CONFIG_QSPI
-	ret = qspi_flash_loadimage(image);
+	ret = qspi_loadimage(image);
 #endif
 
 	if (ret)

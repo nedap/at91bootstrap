@@ -89,7 +89,7 @@ static inline unsigned pin_to_mask(unsigned pin)
 	return 1 << ((pin) % PIO_NUM_IO);
 }
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 static void pio4_set_periph(unsigned pio, unsigned mask,
 				int config, unsigned func)
 {
@@ -99,8 +99,41 @@ static void pio4_set_periph(unsigned pio, unsigned mask,
 
 	value |= (config & PIO_PULLUP) ? AT91C_PIO_CFGR_PUEN : 0;
 	value |= (config & PIO_PULLDOWN) ? AT91C_PIO_CFGR_PDEN : 0;
+	value |= (config & PIO_DRVSTR_LO) ? AT91C_PIO_CFGR_DRVSTR_LOW : 0;
+	value |= (config & PIO_DRVSTR_ME) ? AT91C_PIO_CFGR_DRVSTR_MEDIUM : 0;
+	value |= (config & PIO_DRVSTR_HI) ? AT91C_PIO_CFGR_DRVSTR_HIGH : 0;
 
 	write_pio(pio, PIO_CFGR, value);
+}
+#endif
+
+#ifdef CONFIG_CPU_HAS_PIO3
+static void pio3_set_drvstr(unsigned pin, int config)
+{
+	unsigned reg_value;
+	unsigned mask = pin_to_mask(pin);
+	unsigned pio = pin_to_controller(pin);
+
+	if (config & PIO_DRVSTR_HI) {
+		reg_value = read_pio(pio, PIO_DRIVER1);
+		write_pio(pio, PIO_DRIVER1, reg_value | mask);
+	}
+	else if (config & PIO_DRVSTR_LO) {
+		reg_value = read_pio(pio, PIO_DRIVER1);
+		write_pio(pio, PIO_DRIVER1, reg_value & ~mask);
+	}
+}
+
+static void pio3_set_slewrate(unsigned pin, int config)
+{
+	unsigned reg_value;
+	unsigned mask = pin_to_mask(pin);
+	unsigned pio = pin_to_controller(pin);
+
+	if (config & PIO_SLEWR_CTRL) {
+		reg_value = read_pio(pio, PIO_SLEWR);
+		write_pio(pio, PIO_SLEWR, reg_value | mask);
+	}
 }
 #endif
 
@@ -115,13 +148,16 @@ static int pio_set_a_periph(unsigned pin, int config)
 	if (config & PIO_PULLUP && config & PIO_PULLDOWN)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	pio4_set_periph(pio, mask, config, AT91C_PIO_CFGR_FUNC_PERIPH_A);
 #else
 	write_pio(pio, PIO_IDR, mask);
 	write_pio(pio, ((config & PIO_PULLUP) ? PIO_PPUER : PIO_PPUDR), mask);
-#ifdef CPU_HAS_PIO3
+#ifdef CONFIG_CPU_HAS_PIO3
 	write_pio(pio, ((config & PIO_PULLDOWN) ? PIO_PPDER : PIO_PPDDR), mask);
+
+	pio3_set_drvstr(pin, config);
+	pio3_set_slewrate(pin, config);
 
 	write_pio(pio, PIO_SP1, read_pio(pio, PIO_SP1) & ~mask);
 	write_pio(pio, PIO_SP2, read_pio(pio, PIO_SP2) & ~mask);
@@ -145,13 +181,16 @@ static int pio_set_b_periph(unsigned pin, int config)
 	if (config & PIO_PULLUP && config & PIO_PULLDOWN)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	pio4_set_periph(pio, mask, config, AT91C_PIO_CFGR_FUNC_PERIPH_B);
 #else
 	write_pio(pio, PIO_IDR, mask);
 	write_pio(pio, ((config & PIO_PULLUP) ? PIO_PPUER : PIO_PPUDR), mask);
-#ifdef CPU_HAS_PIO3
+#ifdef CONFIG_CPU_HAS_PIO3
 	write_pio(pio, ((config & PIO_PULLDOWN) ? PIO_PPDER : PIO_PPDDR), mask);
+
+	pio3_set_drvstr(pin, config);
+	pio3_set_slewrate(pin, config);
 
 	write_pio(pio, PIO_SP1, read_pio(pio, PIO_SP1) | mask);
 	write_pio(pio, PIO_SP2, read_pio(pio, PIO_SP2) & ~mask);
@@ -177,12 +216,16 @@ static int pio_set_c_periph(unsigned pin, int config)
 	if (config & PIO_PULLUP && config & PIO_PULLDOWN)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	pio4_set_periph(pio, mask, config, AT91C_PIO_CFGR_FUNC_PERIPH_C);
-#elif defined CPU_HAS_PIO3
+#elif defined CONFIG_CPU_HAS_PIO3
 	write_pio(pio, PIO_IDR, mask);
 	write_pio(pio, ((config && PIO_PULLUP) ? PIO_PPUER : PIO_PPUDR), mask);
 	write_pio(pio, ((config & PIO_PULLDOWN) ? PIO_PPDER : PIO_PPDDR), mask);
+
+	pio3_set_drvstr(pin, config);
+	pio3_set_slewrate(pin, config);
+
 	write_pio(pio, PIO_SP1, read_pio(pio, PIO_SP1) & ~mask);
 	write_pio(pio, PIO_SP2, read_pio(pio, PIO_SP2) | mask);
 	write_pio(pio, PIO_PDR, mask);
@@ -204,12 +247,16 @@ static int pio_set_d_periph(unsigned pin, int config)
 	if (config & PIO_PULLUP && config & PIO_PULLDOWN)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	pio4_set_periph(pio, mask, config, AT91C_PIO_CFGR_FUNC_PERIPH_D);
-#elif defined CPU_HAS_PIO3
+#elif defined CONFIG_CPU_HAS_PIO3
 	write_pio(pio, PIO_IDR, mask);
 	write_pio(pio, ((config && PIO_PULLUP) ? PIO_PPUER : PIO_PPUDR), mask);
 	write_pio(pio, ((config & PIO_PULLDOWN) ? PIO_PPDER : PIO_PPDDR), mask);
+
+	pio3_set_drvstr(pin, config);
+	pio3_set_slewrate(pin, config);
+
 	write_pio(pio, PIO_SP1, read_pio(pio, PIO_SP1) | mask);
 	write_pio(pio, PIO_SP2, read_pio(pio, PIO_SP2) | mask);
 	write_pio(pio, PIO_PDR, mask);
@@ -231,7 +278,7 @@ static int pio_set_e_periph(unsigned pin, int config)
 	if (config & PIO_PULLUP && config & PIO_PULLDOWN)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	pio4_set_periph(pio, mask, config, AT91C_PIO_CFGR_FUNC_PERIPH_E);
 #endif
 
@@ -251,7 +298,7 @@ static int pio_set_f_periph(unsigned pin, int config)
 	if (config & PIO_PULLUP && config & PIO_PULLDOWN)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	pio4_set_periph(pio, mask, config, AT91C_PIO_CFGR_FUNC_PERIPH_F);
 #endif
 
@@ -271,7 +318,7 @@ static int pio_set_g_periph(unsigned pin, int config)
 	if (config & PIO_PULLUP && config & PIO_PULLDOWN)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	pio4_set_periph(pio, mask, config, AT91C_PIO_CFGR_FUNC_PERIPH_G);
 #endif
 
@@ -289,7 +336,7 @@ int pio_set_gpio_input(unsigned pin, int config)
 	if (config & PIO_PULLUP && config & PIO_PULLDOWN)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	write_pio(pio, PIO_MSKR, mask);
 
 	mask = AT91C_PIO_CFGR_FUNC_GPIO;
@@ -303,7 +350,7 @@ int pio_set_gpio_input(unsigned pin, int config)
 
 	write_pio(pio, PIO_IDR, mask);
 	write_pio(pio, ((config & PIO_PULLUP) ? PIO_PPUER : PIO_PPUDR), mask);
-#ifdef CPU_HAS_PIO3
+#ifdef CONFIG_CPU_HAS_PIO3
 	write_pio(pio, ((config & PIO_PULLDOWN) ? PIO_PPDER : PIO_PPDDR), mask);
 #endif
 	write_pio(pio, PIO_ODR, mask);
@@ -321,7 +368,7 @@ int pio_set_gpio_output(unsigned pin, int value)
 	if (pio >= AT91C_NUM_PIO)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	write_pio(pio, PIO_MSKR, mask);
 
 	write_pio(pio, PIO_CFGR,
@@ -348,7 +395,7 @@ static int pio_config_gpio_output(unsigned int pin,
 	if (pio >= AT91C_NUM_PIO)
 		return -1;
 
-#if defined CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 	unsigned reg_value;
 
 	write_pio(pio, PIO_MSKR, mask);
@@ -359,6 +406,11 @@ static int pio_config_gpio_output(unsigned int pin,
 	write_pio(pio, (value ? PIO_SODR : PIO_CODR), mask);
 #else
 	write_pio(pio, ((config & PIO_OPENDRAIN) ? PIO_MDER : PIO_MDDR), mask);
+
+#ifdef CONFIG_CPU_HAS_PIO3
+	pio3_set_drvstr(pin, config);
+	pio3_set_slewrate(pin, config);
+#endif
 
 	pio_set_gpio_output(pin, value);
 #endif

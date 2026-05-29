@@ -38,7 +38,7 @@
 #include "watchdog.h"
 #include "string.h"
 
-#include "arch/at91_pmc.h"
+#include "arch/at91_pmc/pmc.h"
 #include "arch/at91_rstc.h"
 #include "arch/sama5_smc.h"
 #include "arch/at91_pio.h"
@@ -61,8 +61,8 @@ static void at91_dbgu_hw_init(void)
 	};
 
 	pio_configure(dbgu_pins);
-	pmc_enable_periph_clock(AT91C_ID_PIOE);
-	pmc_enable_periph_clock(AT91C_ID_USART3);
+	pmc_enable_periph_clock(AT91C_ID_PIOE, PMC_PERIPH_CLK_DIVIDER_NA);
+	pmc_enable_periph_clock(AT91C_ID_USART3, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 
 static void initialize_dbgu(void)
@@ -71,7 +71,7 @@ static void initialize_dbgu(void)
 
 	at91_dbgu_hw_init();
 
-	if (pmc_check_mck_h32mxdiv())
+	if (pmc_mck_check_h32mxdiv())
 		usart_init(BAUDRATE(MASTER_CLOCK / 2, baudrate));
 	else
 		usart_init(BAUDRATE(MASTER_CLOCK, baudrate));
@@ -86,8 +86,8 @@ static void ddramc_reg_config(struct ddramc_register *ddramc_config)
 	ddramc_config->cr = (AT91C_DDRC2_NC_DDR10_SDR9 /* 10 colum bit */
 				| AT91C_DDRC2_NR_13
 				| AT91C_DDRC2_CAS_3
-				| AT91C_DDRC2_DLL_RESET_DISABLED
-				| AT91C_DDRC2_DIS_DLL_DISABLED
+				| AT91C_DDRC2_DISABLE_RESET_DLL
+				| AT91C_DDRC2_ENABLE_DLL
 				| AT91C_DDRC2_NB_BANKS_4
 				| AT91C_DDRC2_DECOD_INTERLEAVED
 				| AT91C_DDRC2_UNAL_SUPPORTED);
@@ -153,7 +153,7 @@ static void ddramc_init(void)
 	ddramc_reg_config(&ddramc_reg);
 
 	/* enable ddr2 clock */
-	pmc_enable_periph_clock(AT91C_ID_MPDDRC);
+	pmc_enable_periph_clock(AT91C_ID_MPDDRC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pmc_enable_system_clock(AT91C_PMC_DDR);
 
 	/* configure Shift Sampling Point of Data */
@@ -191,7 +191,7 @@ static void ddramc_init(void)
 
 
 #if defined(CONFIG_MATRIX)
-static int matrix_configure_slave(void)
+static void matrix_configure_slave(void)
 {
 	unsigned int ddr_port;
 	unsigned int ssr_setting, sasplit_setting, srtop_setting;
@@ -219,7 +219,7 @@ static int matrix_configure_slave(void)
 					sasplit_setting,
 					ssr_setting);
 
-	/* 4 ~ 10 DDR2 Port1 ~ 7: Non-Secure */
+	/* 4 ~ 10 DDR2 Port0 ~ 7: Non-Secure */
 	srtop_setting = MATRIX_SRTOP(0, MATRIX_SRTOP_VALUE_128M);
 	sasplit_setting = (MATRIX_SASPLIT(0, MATRIX_SASPLIT_VALUE_128M)
 				| MATRIX_SASPLIT(1, MATRIX_SASPLIT_VALUE_128M)
@@ -237,8 +237,7 @@ static int matrix_configure_slave(void)
 			| MATRIX_WRNSECH_NS(1)
 			| MATRIX_WRNSECH_NS(2)
 			| MATRIX_WRNSECH_NS(3));
-	/* DDR port 0 not used from NWd */
-	for (ddr_port = 1; ddr_port < 8; ddr_port++) {
+	for (ddr_port = 0; ddr_port < 8; ddr_port++) {
 		matrix_configure_slave_security(AT91C_BASE_MATRIX64,
 					(H64MX_SLAVE_DDR2_PORT_0 + ddr_port),
 					srtop_setting,
@@ -352,7 +351,6 @@ static int matrix_configure_slave(void)
 					srtop_setting,
 					sasplit_setting,
 					ssr_setting);
-	return 0;
 }
 
 static unsigned int security_ps_peri_id[] = {
@@ -385,39 +383,19 @@ static unsigned int security_ps_peri_id[] = {
 	AT91C_ID_SSC1,
 };
 
-static int matrix_config_periheral(void)
-{
-	unsigned int *peri_id = security_ps_peri_id;
-	unsigned int array_size = sizeof(security_ps_peri_id) / sizeof(unsigned int);
-	int ret;
-
-	ret = matrix_configure_peri_security(peri_id, array_size);
-	if (ret)
-		return -1;
-
-	return 0;
-}
-
 static int matrix_init(void)
 {
-	int ret;
-
 	matrix_write_protect_disable(AT91C_BASE_MATRIX64);
 	matrix_write_protect_disable(AT91C_BASE_MATRIX32);
 
-	ret = matrix_configure_slave();
-	if (ret)
-		return -1;
+	matrix_configure_slave();
 
-	ret = matrix_config_periheral();
-	if (ret)
-		return -1;
-
-	return 0;
+	return matrix_configure_peri_security(security_ps_peri_id,
+					      ARRAY_SIZE(security_ps_peri_id));
 }
 #endif	/* #if defined(CONFIG_MATRIX) */
 
-#if defined(CONFIG_TWI0)
+#if defined(CONFIG_TWI)
 unsigned int at91_twi0_hw_init(void)
 {
 	unsigned int base_addr = AT91C_BASE_TWI0;
@@ -428,30 +406,24 @@ unsigned int at91_twi0_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOA);
+	pmc_enable_periph_clock(AT91C_ID_PIOA, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(twi_pins);
 
-	pmc_enable_periph_clock(AT91C_ID_TWI0);
+	pmc_enable_periph_clock(AT91C_ID_TWI0, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return base_addr;
 }
-#endif
 
-#if defined(CONFIG_TWI1)
 unsigned int at91_twi1_hw_init(void)
 {
 	return 0;
 }
-#endif
 
-#if defined(CONFIG_TWI2)
 unsigned int at91_twi2_hw_init(void)
 {
 	return 0;
 }
-#endif
 
-#if defined(CONFIG_TWI3)
 unsigned int at91_twi3_hw_init(void)
 {
 	unsigned int base_addr = AT91C_BASE_TWI3;
@@ -462,14 +434,13 @@ unsigned int at91_twi3_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOC);
+	pmc_enable_periph_clock(AT91C_ID_PIOC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(twi_pins);
 
-	pmc_enable_periph_clock(AT91C_ID_TWI3);
+	pmc_enable_periph_clock(AT91C_ID_TWI3, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return base_addr;
 }
-#endif
 
 #if defined(CONFIG_AUTOCONFIG_TWI_BUS)
 void at91_board_config_twi_bus(void)
@@ -478,6 +449,7 @@ void at91_board_config_twi_bus(void)
 	wm8904_twi_bus	= 0;
 	act8865_twi_bus	= 0;
 }
+#endif
 #endif
 
 #if defined(CONFIG_DISABLE_ACT8865_I2C)
@@ -525,7 +497,7 @@ void at91_disable_smd_clock(void)
 	 */
 	pmc_enable_system_clock(AT91C_PMC_SMDCK);
 	pmc_set_smd_clock_divider(AT91C_PMC_SMDDIV);
-	pmc_enable_periph_clock(AT91C_ID_SMD);
+	pmc_enable_periph_clock(AT91C_ID_SMD, PMC_PERIPH_CLK_DIVIDER_NA);
 	writel(0xF, (0x0C + AT91C_BASE_SMD));
 	pmc_disable_periph_clock(AT91C_ID_SMD);
 	pmc_disable_system_clock(AT91C_PMC_SMDCK);
@@ -545,9 +517,9 @@ unsigned int at91_eth0_hw_init(void)
 	};
 
 	pio_configure(macb_pins);
-	pmc_enable_periph_clock(AT91C_ID_PIOB);
+	pmc_enable_periph_clock(AT91C_ID_PIOB, PMC_PERIPH_CLK_DIVIDER_NA);
 
-	pmc_enable_periph_clock(AT91C_ID_GMAC);
+	pmc_enable_periph_clock(AT91C_ID_GMAC, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return base_addr;
 }
@@ -565,9 +537,9 @@ unsigned int at91_eth1_hw_init(void)
 	};
 
 	pio_configure(macb_pins);
-	pmc_enable_periph_clock(AT91C_ID_PIOA);
+	pmc_enable_periph_clock(AT91C_ID_PIOA, PMC_PERIPH_CLK_DIVIDER_NA);
 
-	pmc_enable_periph_clock(AT91C_ID_GMAC1);
+	pmc_enable_periph_clock(AT91C_ID_GMAC1, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return base_addr;
 }
@@ -596,7 +568,8 @@ void hw_init(void)
 	 */
 
 	/* Switch PCK/MCK on Main clock output */
-	pmc_cfg_mck(BOARD_PRESCALER_MAIN_CLOCK);
+	pmc_mck_cfg_set(0, BOARD_PRESCALER_MAIN_CLOCK,
+			AT91C_PMC_PLLADIV2 | AT91C_PMC_MDIV | AT91C_PMC_CSS);
 
 	/* Configure PLLA = MOSC * (PLL_MULA + 1) / PLL_DIVA */
 	pmc_cfg_plla(PLLA_SETTINGS);
@@ -606,7 +579,9 @@ void hw_init(void)
 	pmc_init_pll(0);
 
 	/* Switch MCK on PLLA output */
-	pmc_cfg_mck(BOARD_PRESCALER_PLLA);
+	pmc_mck_cfg_set(0, BOARD_PRESCALER_PLLA,
+			AT91C_PMC_H32MXDIV | AT91C_PMC_PLLADIV2 |
+			AT91C_PMC_MDIV | AT91C_PMC_CSS);
 
 	/* Enable External Reset */
 	writel(AT91C_RSTC_KEY_UNLOCK | AT91C_RSTC_URSTEN,
@@ -628,8 +603,10 @@ void hw_init(void)
 	initialize_dbgu();
 
 #if defined(CONFIG_MATRIX)
-	matrix_read_slave_security();
-	matrix_read_periperal_security();
+	matrix_read_slave_security(AT91C_BASE_MATRIX64, H64MX_SLAVE_MAX);
+	matrix_read_slave_security(AT91C_BASE_MATRIX32, H32MX_SLAVE_MAX);
+	matrix_read_peripheral_security(AT91C_BASE_MATRIX64);
+	matrix_read_peripheral_security(AT91C_BASE_MATRIX32);
 #endif
 
 	/* Init timer */
@@ -642,6 +619,10 @@ void hw_init(void)
 
 	/* Prepare L2 cache setup */
 	l2cache_prepare();
+
+#if defined(CONFIG_TWI)
+	twi_init();
+#endif
 }
 #endif /* #ifdef CONFIG_HW_INIT */
 
@@ -660,8 +641,8 @@ void at91_spi0_hw_init(void)
 	/* Configure the PIO controller */
 	pio_configure(spi0_pins);
 
-	pmc_enable_periph_clock(AT91C_ID_PIOC);
-	pmc_enable_periph_clock(AT91C_ID_SPI0);
+	pmc_enable_periph_clock(AT91C_ID_PIOC, PMC_PERIPH_CLK_DIVIDER_NA);
+	pmc_enable_periph_clock(AT91C_ID_SPI0, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 #endif /* #ifdef CONFIG_DATAFLASH */
 
@@ -686,10 +667,25 @@ void at91_mci0_hw_init(void)
 
 	/* Configure the PIO controller */
 	pio_configure(mci_pins);
-	pmc_enable_periph_clock(AT91C_ID_PIOE);
-	pmc_enable_periph_clock(AT91C_ID_HSMCI1);
+	pmc_enable_periph_clock(AT91C_ID_PIOE, PMC_PERIPH_CLK_DIVIDER_NA);
+	pmc_enable_periph_clock(AT91C_ID_HSMCI1, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	/* Set of name function pointer */
 	sdcard_set_of_name = &sdcard_set_of_name_board;
 }
 #endif /* #ifdef CONFIG_SDCARD */
+
+
+#if defined(CONFIG_TWI)
+void twi_init()
+{
+	twi_bus_init(at91_twi0_hw_init);
+	twi_bus_init(at91_twi1_hw_init);
+	twi_bus_init(at91_twi2_hw_init);
+	twi_bus_init(at91_twi3_hw_init);
+#if defined(CONFIG_AUTOCONFIG_TWI_BUS)
+	dbg_loud("Auto-Config the TWI Bus by the board\n");
+	at91_board_config_twi_bus();
+#endif
+}
+#endif

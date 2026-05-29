@@ -29,7 +29,7 @@
 #include "hardware.h"
 #include "arch/at91_ccfg.h"
 #include "arch/at91_rstc.h"
-#include "arch/at91_pmc.h"
+#include "arch/at91_pmc/pmc.h"
 #include "arch/at91_smc.h"
 #include "arch/at91_pio.h"
 #include "arch/at91_ddrsdrc.h"
@@ -53,7 +53,7 @@ static void at91_dbgu_hw_init(void)
 	};
 
 	/* Configure the dbgu pins */
-	pmc_enable_periph_clock(AT91C_ID_PIOB);
+	pmc_enable_periph_clock(AT91C_ID_PIOB, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(dbgu_pins);
 }
 
@@ -73,7 +73,7 @@ static void ddramc_reg_config(struct ddramc_register *ddramc_config)
 			| AT91C_DDRC2_NR_14		/* 14 row bits(8K)*/
 			| AT91C_DDRC2_CAS_3		/* CAS Latency 3 */
 			| AT91C_DDRC2_EBISHARE		/* DQM is shared with other controller */
-			| AT91C_DDRC2_DLL_RESET_DISABLED);	/* DLL not reset*/
+			| AT91C_DDRC2_DISABLE_RESET_DLL);
 
 	ddramc_config->rtr = 0x24B;
 
@@ -127,94 +127,39 @@ static void recovery_buttons_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOB);
+	pmc_enable_periph_clock(AT91C_ID_PIOB, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(recovery_button_pins);
 }
 #endif /* #if defined(CONFIG_NANDFLASH_RECOVERY) || defined(CONFIG_DATAFLASH_RECOVERY) */
 
-#ifdef CONFIG_USER_HW_INIT
-static void nedap_usb_fix(void)
+static int ek_special_hw_init(void)
 {
-	unsigned int lock = 1000000;
-
-	writel( readl(PMC_UCKR + AT91C_BASE_PMC) | AT91C_CKGR_UPLLEN_ENABLED, PMC_UCKR + AT91C_BASE_PMC );
-	while ( (lock--) && ! (readl(PMC_SR + AT91C_BASE_PMC) & AT91C_PMC_LOCKU) );
-	writel( readl(PMC_UCKR + AT91C_BASE_PMC) & ~AT91C_CKGR_UPLLEN_ENABLED, PMC_UCKR + AT91C_BASE_PMC );
-}
-#endif /* #ifdef CONFIG_USER_HW_INIT */
-
-#ifdef CONFIG_USER_HW_INIT
-#include "arch/at91_spi.h"
-
-static void nedap_switch_init(void)
-{
-	/* SPI chip select register */
-	#define AT91C_SPI_CLK 		5000000
-	#define CLOCK			AT91C_SPI_SCBR(MASTER_CLOCK / AT91C_SPI_CLK)
-	#define SPI_CSR_SETTINGS 	(AT91C_SPI_DLYBCT(0) | AT91C_SPI_DLYBS(0) | CLOCK | AT91C_SPI_CPOL)
-
-	/* SPI mode register settings */
-	#define SPI_MR_SETTINGS 	(AT91C_SPI_DLYBCS(0) | AT91C_SPI_PCS(0x0B) | AT91C_SPI_MODFDIS | AT91C_SPI_MSTR)
-
-	/* data for the switch */
-	#define NCHARS 3
-	unsigned int tx[1] = { 2 | (198 << 8) | (10 << 16) };	/* 2 (write), 198 (register = ForwardInvalidVIDFrame_HostMode), 10 (value) */
-	unsigned int rx[1];
-
-	/* Configure PIOs */
-	const struct pio_desc switch_pins[] = {
-		{"MISO",  AT91C_PIN_PB(14), 0, PIO_DEFAULT, PIO_PERIPH_A},
-		{"MOSI",  AT91C_PIN_PB(15), 0, PIO_DEFAULT, PIO_PERIPH_A},
-		{"SPCK",  AT91C_PIN_PB(16), 0, PIO_DEFAULT, PIO_PERIPH_A},
-		{"NPCS2", AT91C_PIN_PD(18), 0, PIO_DEFAULT, PIO_PERIPH_A},
-		{(char *) 0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
+	/*
+	 * For on the sam9m10g45ek board, the chip wm9711 stay in the test mode,
+	 * so it need do some action to exit mode.
+	 */
+	const struct pio_desc wm9711_pins[] = {
+		{"AC97TX", AT91C_PIN_PD(7), 0, PIO_PULLUP, PIO_OUTPUT},
+		{"AC97FS", AT91C_PIN_PD(8), 0, PIO_PULLUP, PIO_OUTPUT},
+		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	/* Configure spi */
-	pmc_enable_periph_clock(AT91C_ID_PIOB);
-	pio_configure(switch_pins);
-	pmc_enable_periph_clock(AT91C_ID_SPI1);
+	pmc_enable_periph_clock(AT91C_ID_PIOD_E, PMC_PERIPH_CLK_DIVIDER_NA);
+	pio_configure(wm9711_pins);
 
-	/* Enable the SPI1 Clock */
-	writel((1 << AT91C_ID_SPI1), PMC_PCER + AT91C_BASE_PMC);
+	/*
+	 * Disable pull-up on:
+	 * RXDV(PA15) => PHY normal mode (not Test mode)
+	 * ERX0(PA12) => PHY ADDR0
+	 * ERX1(PA13) => PHY ADDR1 => PHYADDR = 0x0
+	 *
+	 * PHY has internal pull-down
+	 */
+	 writel((0x01 << 12) | (0x01 << 13) | (0x01 << 15),
+				AT91C_BASE_PIOA + PIO_PPUDR);
 
-	/* Reset SPI1; may need two software reset */
-	writel(AT91C_SPI_SWRST | AT91C_SPI_SPIDIS, AT91C_BASE_SPI1 + SPI_CR);
-	writel(AT91C_SPI_SWRST | AT91C_SPI_SPIDIS, AT91C_BASE_SPI1 + SPI_CR);
-
-	/* Configure CS2 */
-	writel(SPI_CSR_SETTINGS, AT91C_BASE_SPI1 + SPI_CSR(2));
-	writel(SPI_MR_SETTINGS, AT91C_BASE_SPI1 + SPI_MR);
-
-	/* SPI enable */
-	writel(AT91C_SPI_SPIEN, AT91C_BASE_SPI1 + SPI_CR);
-
-	/* Initialize the RX & TX Pointer */
-	writel((unsigned int)rx, AT91C_BASE_SPI1 + SPI_RPR);
-	writel((unsigned int)tx, AT91C_BASE_SPI1 + SPI_TPR);
-
-	/* Intialize the RX & TX Counters */
-	writel(NCHARS, AT91C_BASE_SPI1 + SPI_RCR);
-	writel(NCHARS, AT91C_BASE_SPI1 + SPI_TCR);
-
-	/* Enable RX & TX */
-	writel(AT91C_SPI_RXTEN | AT91C_SPI_TXTEN, AT91C_BASE_SPI1 + SPI_PTCR);
-
-	/* wait until done */
-	while (!(readl(AT91C_BASE_SPI1 + SPI_SR) & AT91C_SPI_RXBUFF)) ;
+	 return 0;
 }
-#endif /* #ifdef CONFIG_USER_HW_INIT */
-
-#ifdef CONFIG_USER_HW_INIT
-static void nedap_enable_icache(void)
-{
-	unsigned int value;
-
-	__asm__("mrc p15, 0, %0, c1, c0, 0" : "=r" (value));
-	value |= (1<<12);
-	__asm__("mcr p15, 0, %0, c1, c0, 0" : : "r" (value));
-}
-#endif /* #ifdef CONFIG_USER_HW_INIT */
 
 #ifdef CONFIG_HW_INIT
 void hw_init(void)
@@ -232,10 +177,12 @@ void hw_init(void)
 	pmc_cfg_plla(PLLA_SETTINGS);
 
 	/* Switch PCK/MCK on Main clock output */
-	pmc_cfg_mck(BOARD_PRESCALER_MAIN_CLOCK);
+	pmc_mck_cfg_set(0, BOARD_PRESCALER_MAIN_CLOCK,
+			AT91C_PMC_PLLADIV2 | AT91C_PMC_MDIV | AT91C_PMC_CSS);
 
 	/* Switch PCK/MCK on PLLA output */
-	pmc_cfg_mck(BOARD_PRESCALER_PLLA);
+	pmc_mck_cfg_set(0, BOARD_PRESCALER_PLLA,
+			AT91C_PMC_PLLADIV2 | AT91C_PMC_MDIV | AT91C_PMC_CSS);
 
 	/* Enable External Reset */
 	writel(AT91C_RSTC_KEY_UNLOCK | AT91C_RSTC_URSTEN, AT91C_BASE_RSTC + RSTC_RMR);
@@ -255,13 +202,8 @@ void hw_init(void)
 	/* Init the recovery buttons pins */
 	recovery_buttons_hw_init();
 #endif
-
-#ifdef CONFIG_USER_HW_INIT
 	/* do some special init */
-	nedap_enable_icache();
-	nedap_usb_fix();
-	nedap_switch_init();
-#endif
+	ek_special_hw_init();
 }
 #endif /* #ifdef CONFIG_HW_INIT */
 
@@ -277,10 +219,10 @@ void at91_spi0_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOB);
+	pmc_enable_periph_clock(AT91C_ID_PIOB, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(spi0_pins);
 
-	pmc_enable_periph_clock(AT91C_ID_SPI0);
+	pmc_enable_periph_clock(AT91C_ID_SPI0, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 #endif /* #ifdef CONFIG_DATAFLASH */
 
@@ -305,11 +247,11 @@ void at91_mci0_hw_init(void)
 	};
 
 	/* Configure the PIO controller */
-	pmc_enable_periph_clock(AT91C_ID_PIOA);
+	pmc_enable_periph_clock(AT91C_ID_PIOA, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(mci_pins);
 
 	/* Enable the clock */
-	pmc_enable_periph_clock(AT91C_ID_MCI0);
+	pmc_enable_periph_clock(AT91C_ID_MCI0, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 #endif /* #ifdef CONFIG_SDCARD */
 
@@ -325,7 +267,7 @@ void nandflash_hw_init(void)
 	};
 
 	/* Configure the PIO controll */
-	pmc_enable_periph_clock(AT91C_ID_PIOC);
+	pmc_enable_periph_clock(AT91C_ID_PIOC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(nand_pins);
 
 	/* Setup Smart Media, first enable the address range of CS3

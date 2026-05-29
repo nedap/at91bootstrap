@@ -38,11 +38,11 @@
 #define SPI_IDR		0x18	/* Interrupt Disable Register */
 #define SPI_IMR		0x1C	/* Interrupt Mask Register */
 #define SPI_CSR(x)	(0x30 + 4 * (x))	/* Chip Select Register */
-#define SPI_RPR		0x100	/* Receive Pointer Register */
-#define SPI_RCR		0x104	/* Receive Counter Register */
-#define SPI_TPR		0x108	/* Transmit Pointer Register */
-#define SPI_TCR		0x10C	/* Transmit Counter Register */
-#define SPI_PTCR	0x120	/* PDC Transfer Control Register */
+#define SPI_RPR		0x100
+#define SPI_RCR		0x104
+#define SPI_TPR		0x108
+#define SPI_TCR		0x10C
+#define SPI_PTCR	0x120
 
 /* -------- SPI_CR : (SPI Offset: 0x0) SPI Control Register --------*/ 
 #define AT91C_SPI_SPIEN		(0x1UL <<  0)
@@ -106,7 +106,6 @@
 #define AT91C_SPI_DLYBS(x)	(x << 16)
 #define AT91C_SPI_DLYBCT(x)	(x << 24)
 
-/* -------- SPI_PTCR : (SPI Offset: 0x120) PDC Transfer Control Register -------- */
 #define AT91C_SPI_RXTEN		(0x1UL <<  0)
 #define AT91C_SPI_TXTEN		(0x1UL <<  8)
 

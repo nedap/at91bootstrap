@@ -36,7 +36,7 @@
 #include "watchdog.h"
 #include "string.h"
 
-#include "arch/at91_pmc.h"
+#include "arch/at91_pmc/pmc.h"
 #include "arch/at91_rstc.h"
 #include "arch/at91_pio.h"
 #include "arch/at91_ddrsdrc.h"
@@ -57,7 +57,7 @@ static void at91_dbgu_hw_init(void)
 	};
 
 	pio_configure(dbgu_pins);
-	pmc_sam9x5_enable_periph_clk(CONFIG_SYS_DBGU_ID);
+	pmc_enable_periph_clock(CONFIG_SYS_DBGU_ID, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 
 static void initialize_dbgu(void)
@@ -66,14 +66,14 @@ static void initialize_dbgu(void)
 
 	at91_dbgu_hw_init();
 
-	if (pmc_check_mck_h32mxdiv())
+	if (pmc_mck_check_h32mxdiv())
 		usart_init(BAUDRATE(MASTER_CLOCK / 2, baudrate));
 	else
 		usart_init(BAUDRATE(MASTER_CLOCK, baudrate));
 }
 
 #if defined(CONFIG_MATRIX)
-static int matrix_configure_slave(void)
+static void matrix_configure_slave(void)
 {
 	unsigned int ddr_port;
 	unsigned int ssr_setting, sasplit_setting, srtop_setting;
@@ -89,7 +89,7 @@ static int matrix_configure_slave(void)
 
 	/* 1: H64MX Peripheral Bridge */
 
-	/* 2 ~ 9 DDR2 Port1 ~ 7: Non-Secure */
+	/* 2 ~ 9 DDR2 Port0 ~ 7: Non-Secure */
 	srtop_setting = MATRIX_SRTOP(0, MATRIX_SRTOP_VALUE_128M);
 	sasplit_setting = (MATRIX_SASPLIT(0, MATRIX_SASPLIT_VALUE_128M)
 				| MATRIX_SASPLIT(1, MATRIX_SASPLIT_VALUE_128M)
@@ -107,8 +107,7 @@ static int matrix_configure_slave(void)
 			| MATRIX_WRNSECH_NS(1)
 			| MATRIX_WRNSECH_NS(2)
 			| MATRIX_WRNSECH_NS(3));
-	/* DDR port 0 not used from NWd */
-	for (ddr_port = 1; ddr_port < 8; ddr_port++) {
+	for (ddr_port = 0; ddr_port < 8; ddr_port++) {
 		matrix_configure_slave_security(AT91C_BASE_MATRIX64,
 					(H64MX_SLAVE_DDR2_PORT_0 + ddr_port),
 					srtop_setting,
@@ -213,41 +212,14 @@ static int matrix_configure_slave(void)
 					srtop_setting,
 					sasplit_setting,
 					ssr_setting);
-
-	return 0;
-}
-
-static unsigned int security_ps_peri_id[] = {
-	0,
-};
-
-static int matrix_config_periheral(void)
-{
-	unsigned int *peri_id = security_ps_peri_id;
-	unsigned int array_size = sizeof(security_ps_peri_id) / sizeof(unsigned int);
-	int ret;
-
-	ret = matrix_configure_peri_security(peri_id, array_size);
-	if (ret)
-		return -1;
-
-	return 0;
 }
 
 static int matrix_init(void)
 {
-	int ret;
-
 	matrix_write_protect_disable(AT91C_BASE_MATRIX64);
 	matrix_write_protect_disable(AT91C_BASE_MATRIX32);
 
-	ret = matrix_configure_slave();
-	if (ret)
-		return -1;
-
-	ret = matrix_config_periheral();
-	if (ret)
-		return -1;
+	matrix_configure_slave();
 
 	return 0;
 }
@@ -262,7 +234,7 @@ static void ddramc_reg_config(struct ddramc_register *ddramc_config)
 	ddramc_config->cr = (AT91C_DDRC2_NC_DDR10_SDR9
 				| AT91C_DDRC2_NR_14
 				| AT91C_DDRC2_CAS_5
-				| AT91C_DDRC2_DIS_DLL_DISABLED
+				| AT91C_DDRC2_DISABLE_DLL
 				| AT91C_DDRC2_WEAK_STRENGTH_RZQ7
 				| AT91C_DDRC2_NB_BANKS_8
 				| AT91C_DDRC2_DECOD_INTERLEAVED
@@ -272,7 +244,44 @@ static void ddramc_reg_config(struct ddramc_register *ddramc_config)
 	 * According to MT41K128M16 datasheet
 	 * Maximum fresh period: 64ms, refresh count: 8k
 	 */
-#ifdef CONFIG_BUS_SPEED_166MHZ
+#ifdef CONFIG_BUS_SPEED_116MHZ
+	/* Refresh Timer is (64ms / 8k) * 116MHz = 907(0x38b) */
+	ddramc_config->rtr = 0x38b;
+
+	/*
+	 * According to the sama5d2 datasheet and the following values:
+	 * T Sens = 0.75%/C, V Sens = 0.2%/mV, T driftrate = 1C/sec and V driftrate = 15 mV/s
+	 * Warning: note that the values T driftrate and V driftrate are dependent on
+	 * the application environment.
+	 * ZQCS period is 1.5 / ((0.75 x 1) + (0.2 x 15)) = 0.4s
+	 * If tref is 7.8us, we have: 400000 / 7.8 = 51282(0xC852)
+	 * */
+	ddramc_config->cal_mr4r = AT91C_DDRC2_COUNT_CAL(0xC852);
+
+	/* DDR3 ZQCS */
+	ddramc_config->tim_calr = AT91C_DDRC2_ZQCS(64);
+
+	/* Assume timings for 8ns min clock period */
+	ddramc_config->t0pr = (AT91C_DDRC2_TRAS_(5)
+			| AT91C_DDRC2_TRCD_(2)
+			| AT91C_DDRC2_TWR_(4)
+			| AT91C_DDRC2_TRC_(6)
+			| AT91C_DDRC2_TRP_(2)
+			| AT91C_DDRC2_TRRD_(4)
+			| AT91C_DDRC2_TWTR_(4)
+			| AT91C_DDRC2_TMRD_(4));
+
+	ddramc_config->t1pr = (AT91C_DDRC2_TRFC_(19)
+			| AT91C_DDRC2_TXSNR_(21)
+			| AT91C_DDRC2_TXSRD_(0)
+			| AT91C_DDRC2_TXP_(10));
+
+	ddramc_config->t2pr = (AT91C_DDRC2_TXARD_(0)
+			| AT91C_DDRC2_TXARDS_(0)
+			| AT91C_DDRC2_TRPA_(0)
+			| AT91C_DDRC2_TRTP_(4)
+			| AT91C_DDRC2_TFAW_(5));
+#elif CONFIG_BUS_SPEED_166MHZ
 	/* Refresh Timer is (64ms / 8k) * 166MHz = 1297(0x511) */
 	ddramc_config->rtr = 0x511;
 
@@ -321,7 +330,7 @@ static void ddramc_init(void)
 
 	ddramc_reg_config(&ddramc_reg);
 
-	pmc_sam9x5_enable_periph_clk(AT91C_ID_MPDDRC);
+	pmc_enable_periph_clock(AT91C_ID_MPDDRC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pmc_enable_system_clock(AT91C_PMC_DDR);
 
 	/* MPDDRC I/O Calibration Register */
@@ -329,7 +338,15 @@ static void ddramc_init(void)
 	reg &= ~AT91C_MPDDRC_RDIV;
 	reg |= AT91C_MPDDRC_RDIV_DDR2_RZQ_50;
 	reg &= ~AT91C_MPDDRC_TZQIO;
+
+	/* TZQIO field must be set to 600ns */
+#ifdef CONFIG_BUS_SPEED_116MHZ
+	reg |= AT91C_MPDDRC_TZQIO_(70);
+#elif CONFIG_BUS_SPEED_166MHZ
 	reg |= AT91C_MPDDRC_TZQIO_(100);
+#else
+#error "No CLK setting defined"
+#endif
 	writel(reg, (AT91C_BASE_MPDDRC + MPDDRC_IO_CALIBR));
 
 	writel(AT91C_MPDDRC_RD_DATA_PATH_TWO_CYCLES,
@@ -395,7 +412,7 @@ static void lpddr1_init(void)
 
 	lpddr1_reg_config(&ddramc_reg);
 
-	pmc_sam9x5_enable_periph_clk(AT91C_ID_MPDDRC);
+	pmc_enable_periph_clock(AT91C_ID_MPDDRC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pmc_enable_system_clock(AT91C_PMC_DDR);
 
 	/*
@@ -403,7 +420,7 @@ static void lpddr1_init(void)
 	 * the DDR_DQ and DDR_DQS input buffers to always on by setting
 	 * the FDQIEN and FDQSIEN bits in the SFR_DDRCFG register.
 	 */
-	pmc_sam9x5_enable_periph_clk(AT91C_ID_SFR);
+	pmc_enable_periph_clock(AT91C_ID_SFR, PMC_PERIPH_CLK_DIVIDER_NA);
 	reg = readl(AT91C_BASE_SFR + SFR_DDRCFG);
 	reg |= AT91C_DDRCFG_FDQIEN;
 	reg |= AT91C_DDRCFG_FDQSIEN;
@@ -480,7 +497,7 @@ static void lpddr2_init(void)
 	struct ddramc_register ddramc_reg;
 	unsigned int reg;
 
-	pmc_enable_periph_clock(AT91C_ID_MPDDRC);
+	pmc_enable_periph_clock(AT91C_ID_MPDDRC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pmc_enable_system_clock(AT91C_PMC_DDR);
 
 	reg = readl(AT91C_BASE_MPDDRC + MPDDRC_IO_CALIBR);
@@ -548,7 +565,7 @@ static void lpddr3_init(void)
 	struct ddramc_register ddramc_reg;
 	unsigned int reg;
 
-	pmc_enable_periph_clock(AT91C_ID_MPDDRC);
+	pmc_enable_periph_clock(AT91C_ID_MPDDRC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pmc_enable_system_clock(AT91C_PMC_DDR);
 
 	reg = readl(AT91C_BASE_MPDDRC + MPDDRC_IO_CALIBR);
@@ -590,24 +607,21 @@ void hw_init(void)
 	/* Disable watchdog */
 	at91_disable_wdt();
 
-	/*
-	 * while coming from the ROM code, we run on PLLA @ 396 MHz / 132 MHz
-	 * so we need to slow down and configure MCKR accordingly.
-	 * This is why we have a special flavor of the switching function.
-	 */
-
-	/* Switch PCK/MCK on Main Clock output */
-	pmc_cfg_mck_down(BOARD_PRESCALER_MAIN_CLOCK);
-
 	/* Configure PLLA */
 	pmc_cfg_plla(PLLA_SETTINGS);
 
 	/* Initialize PLLA charge pump */
-	/* No need: we keep what is set in ROM code */
-	//pmc_init_pll(0x3);
+	/*
+	 * The field named ICP_PLLA[1:0] must be written to 0.
+	 * Even if its default value is 0, it is wrongly re-written to 0x3
+	 * by the ROMCode.
+	 */
+	pmc_init_pll(AT91C_PMC_ICPPLLA_0);
 
 	/* Switch MCK on PLLA output */
-	pmc_cfg_mck(BOARD_PRESCALER_PLLA);
+	pmc_mck_cfg_set(0, BOARD_PRESCALER_PLLA,
+			AT91C_PMC_H32MXDIV | AT91C_PMC_PLLADIV2 |
+			AT91C_PMC_MDIV | AT91C_PMC_CSS);
 
 	/* Enable External Reset */
 	writel(AT91C_RSTC_KEY_UNLOCK | AT91C_RSTC_URSTEN,
@@ -637,6 +651,10 @@ void hw_init(void)
 	l2cache_prepare();
 
 	at91_init_can_message_ram();
+
+#if defined(CONFIG_TWI)
+	twi_init();
+#endif
 }
 #endif /* #ifdef CONFIG_HW_INIT */
 
@@ -700,7 +718,7 @@ void at91_spi0_hw_init(void)
 
 	pio_configure(spi_pins);
 
-	pmc_sam9x5_enable_periph_clk(CONFIG_SYS_ID_SPI);
+	pmc_enable_periph_clock(CONFIG_SYS_ID_SPI, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 #endif
 
@@ -784,7 +802,7 @@ void at91_qspi_hw_init(void)
 
 	pio_configure(qspi_pins);
 
-	pmc_sam9x5_enable_periph_clk(CONFIG_SYS_ID_QSPI);
+	pmc_enable_periph_clock(CONFIG_SYS_ID_QSPI, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 #endif
 #endif
@@ -835,14 +853,14 @@ void at91_sdhc_hw_init(void)
 
 	pio_configure(sdmmc_pins);
 
-	pmc_sam9x5_enable_periph_clk(CONFIG_SYS_ID_SDHC);
-	pmc_enable_periph_generated_clk(CONFIG_SYS_ID_SDHC,
-					GCK_CSS_UPLL_CLK,
-					ATMEL_SDHC_GCKDIV_VALUE);
+	pmc_enable_periph_clock(CONFIG_SYS_ID_SDHC, PMC_PERIPH_CLK_DIVIDER_NA);
+	pmc_enable_generic_clock(CONFIG_SYS_ID_SDHC,
+				 GCK_CSS_UPLL_CLK,
+				 ATMEL_SDHC_GCKDIV_VALUE);
 }
 #endif
 
-#if defined(CONFIG_TWI0)
+#if defined(CONFIG_TWI)
 unsigned int at91_twi0_hw_init(void)
 {
 	unsigned int base_addr = AT91C_BASE_TWI0;
@@ -855,13 +873,11 @@ unsigned int at91_twi0_hw_init(void)
 
 	pio_configure(twi_pins);
 
-	pmc_sam9x5_enable_periph_clk(AT91C_ID_TWI0);
+	pmc_enable_periph_clock(AT91C_ID_TWI0, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return base_addr;
 }
-#endif
 
-#if defined(CONFIG_TWI1)
 unsigned int at91_twi1_hw_init(void)
 {
 	const struct pio_desc twi_pins[] = {
@@ -872,17 +888,27 @@ unsigned int at91_twi1_hw_init(void)
 
 	pio_configure(twi_pins);
 
-	pmc_sam9x5_enable_periph_clk(AT91C_ID_TWI1);
+	pmc_enable_periph_clock(AT91C_ID_TWI1, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return AT91C_BASE_TWI1;
 }
-#endif
 
 #if defined(CONFIG_AUTOCONFIG_TWI_BUS)
 void at91_board_config_twi_bus(void)
 {
 	act8865_twi_bus = 0;
 	at24xx_twi_bus = 1;
+}
+#endif
+
+void twi_init()
+{
+	twi_bus_init(at91_twi0_hw_init);
+	twi_bus_init(at91_twi1_hw_init);
+#if defined(CONFIG_AUTOCONFIG_TWI_BUS)
+	dbg_loud("Auto-Config the TWI Bus by the board\n");
+	at91_board_config_twi_bus();
+#endif
 }
 #endif
 
@@ -900,35 +926,35 @@ int at91_board_act8865_set_reg_voltage(void)
 	value = ACT8865_2V5;
 	ret = act8865_set_reg_voltage(reg, value);
 	if (ret)
-		dbg_loud("ACT8865: Failed to make REG4 output 2500mV\n");
+		console_printf("ACT8865: Failed to make REG4 output 2500mV\n");
 
 	/* Enable REG5 output 3.3V */
 	reg = REG5_0;
 	value = ACT8865_3V3;
 	ret = act8865_set_reg_voltage(reg, value);
 	if (ret)
-		dbg_loud("ACT8865: Failed to make REG5 output 3300mV\n");
+		console_printf("ACT8865: Failed to make REG5 output 3300mV\n");
 
 	/* Enable REG6 output 2.5V */
 	reg = REG6_0;
 	value = ACT8865_2V5;
 	ret = act8865_set_reg_voltage(reg, value);
 	if (ret)
-		dbg_loud("ACT8865: Failed to make REG6 output 2500mV\n");
+		console_printf("ACT8865: Failed to make REG6 output 2500mV\n");
 
 	/* Enable REG7 output 1.8V */
 	reg = REG7_0;
 	value = ACT8865_1V8;
 	ret = act8865_set_reg_voltage(reg, value);
 	if (ret)
-		dbg_loud("ACT8865: Failed to make REG7 output 1800mV\n");
+		console_printf("ACT8865: Failed to make REG7 output 1800mV\n");
 
 	/* Enable REG2 output 1.2V */
 	reg = REG2_1;
 	value = ACT8865_1V2;
 	ret = act8865_set_reg_voltage(reg, value);
 	if (ret)
-		dbg_loud("ACT8865: Failed to make REG2 output 1200mV\n");
+		console_printf("ACT8865: Failed to make REG2 output 1200mV\n");
 
 	/* Enable REG4 output 2.5V */
 	return 0;

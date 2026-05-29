@@ -28,28 +28,38 @@
 #include "hardware.h"
 #include "arch/at91_slowclk.h"
 #include "timer.h"
+#include "backup.h"
 
 int slowclk_enable_osc32(void)
 {
-#if !defined(SAMA5D4) && !defined(SAMA5D2)
+	/* start a internal timer */
+	start_interval_timer();
+
+#if !defined(CONFIG_SAMA5D4) && !defined(CONFIG_SAMA5D2)
 	unsigned int reg;
+
+	reg = readl(AT91C_BASE_SCKCR);
+
+	/* If OSC32 is already enabled, skip to avoid race during power glitch */
+	if (reg & AT91C_SLCKSEL_OSC32EN)
+		return 0;
 
 	/*
 	 * Enable the 32768 Hz oscillator by setting the bit OSC32EN to 1
 	 */
-	reg = readl(AT91C_BASE_SCKCR);
 	reg |= AT91C_SLCKSEL_OSC32EN;
 	writel(reg, AT91C_BASE_SCKCR);
-#endif /* #if !defined(SAMA5D4) && !defined(SAMA5D2) */
-
-	/* start a internal timer */
-	start_interval_timer();
+#endif
 
 	return 0;
 }
 
 static void slowclk_wait_osc32_stable(void)
 {
+	/* VDDBU keeps feeding oscilator. No need for wait here. */
+	if (backup_resume())
+		return;
+
 	/*
 	 * Wait 32768 Hz Startup Time for clock stabilization (software loop)
 	 * wait about 1s (1300ms)
@@ -57,19 +67,27 @@ static void slowclk_wait_osc32_stable(void)
 	wait_interval_timer(1300);
 }
 
-#if !defined(SAMA5D4) && !defined(SAMA5D2)
+#if !defined(CONFIG_SAMA5D4) && !defined(CONFIG_SAMA5D2) \
+	&& !defined(CONFIG_SAM9X60) && !defined(CONFIG_SAMA7G5)
 static void slowclk_disable_rc32(void)
 {
 	unsigned int reg;
 
+	reg = readl(AT91C_BASE_SCKCR);
+
+	/* If RC32 is already disabled, skip */
+	if (!(reg & AT91C_SLCKSEL_RCEN))
+		return;
+
 	/*
 	 * Disable the 32kHz RC oscillator by setting the bit RCEN to 0
 	 */
-	reg = readl(AT91C_BASE_SCKCR);
 	reg &= ~AT91C_SLCKSEL_RCEN;
 	writel(reg, AT91C_BASE_SCKCR);
 }
-#endif /* #if !defined(SAMA5D4) && !defined(SAMA5D2) */
+#endif /* #if !defined(CONFIG_SAMA5D4) && !defined(CONFIG_SAMA5D2) \
+	&& !defined(CONFIG_SAM9X60) && !defined(CONFIG_SAMA7G5)
+	*/
 
 static int slowclk_select_osc32(void)
 {
@@ -80,6 +98,11 @@ static int slowclk_select_osc32(void)
 	 * by setting the bit OSCSEL to 1
 	 */
 	reg = readl(AT91C_BASE_SCKCR);
+
+	/* Do nothing if aleady set. */
+	if (reg & AT91C_SLCKSEL_OSCSEL)
+		return 0;
+
 	reg |= AT91C_SLCKSEL_OSCSEL;
 	writel(reg, AT91C_BASE_SCKCR);
 
@@ -94,24 +117,36 @@ static int slowclk_select_osc32(void)
 
 int slowclk_switch_osc32(void)
 {
+	unsigned int reg;
+
+	/*
+	 * If the external 32kHz oscillator is already selected and enabled,
+	 * skip the entire switch sequence. Re-configuring during a power
+	 * glitch could disable all slow clock sources and brick the board.
+	 */
+	reg = readl(AT91C_BASE_SCKCR) & 0x0F;
+	if ((reg & AT91C_SLCKSEL_OSCSEL) && (reg & AT91C_SLCKSEL_OSC32EN))
+		return 0;
+
 	slowclk_wait_osc32_stable();
 
 	slowclk_select_osc32();
 
-#if !defined(SAMA5D4) && !defined(SAMA5D2)
+#if !defined(CONFIG_SAMA5D4) && !defined(CONFIG_SAMA5D2) \
+	&& !defined(CONFIG_SAM9X60) && !defined(CONFIG_SAMA7G5)
 	slowclk_disable_rc32();
 #endif
 
 	return 0;
 }
 
-
-#if defined(CONFIG_SCLK_BYPASS)
 /* Switch from 32768 Hz Crystal Oscillator to Internal 32 kHz RC Oscillator */
-static int slowclk_switch_rc32(void)
+int slowclk_switch_rc32(void)
 {
 	unsigned int reg;
 
+#if !defined(CONFIG_SAMA5D4) && !defined(CONFIG_SAMA5D2) \
+	&& !defined(CONFIG_SAM9X60) && !defined(CONFIG_SAMA7G5)
 	/* Enable the internal 32 kHz RC oscillator for low power by writing a 1 to the RCEN bit. */
 	reg = readl(AT91C_BASE_SCKCR);
 	reg |= AT91C_SLCKSEL_RCEN;
@@ -120,6 +155,7 @@ static int slowclk_switch_rc32(void)
 	/* Wait internal 32 kHz RC startup time for clock stabilization (software loop). */
 	/* 500 us */
 	udelay(500);
+#endif
 
 	/* Switch from 32768 Hz oscillator to internal RC by writing a 0 to the OSCSEL bit. */
 	reg = readl(AT91C_BASE_SCKCR);
@@ -130,14 +166,17 @@ static int slowclk_switch_rc32(void)
 	/* 5 slow clock cycles = ~153 us (5 / 32768) */
 	udelay(153);
 
+#if !defined(CONFIG_SAMA5D4) && !defined(CONFIG_SAMA5D2)
 	/* Disable the 32768 Hz oscillator by writing a 0 to the OSC32EN bit. */
 	reg = readl(AT91C_BASE_SCKCR);
 	reg &= ~AT91C_SLCKSEL_OSC32EN;
 	writel(reg, AT91C_BASE_SCKCR);
+#endif
 
 	return 0;
 }
 
+#ifdef CONFIG_SCLK_BYPASS
 static int slowclk_osc32_bypass(void)
 {
 	unsigned int reg;
@@ -166,12 +205,15 @@ static int slowclk_osc32_bypass(void)
 	 */
 	udelay(153);
 
+#if !defined(CONFIG_SAMA5D4) && !defined(CONFIG_SAMA5D2) \
+	&& !defined(CONFIG_SAM9X60) && !defined(CONFIG_SAMA7G5)
+
 	/*
 	 * Disable the 32kHz RC oscillator by setting the bit RCEN to 0
 	 */
-	reg = readl(AT91C_BASE_SCKCR);
-	reg &= ~AT91C_SLCKSEL_RCEN;
-	writel(reg, AT91C_BASE_SCKCR);
+	slowclk_disable_rc32();
+#endif /* #if !defined(CONFIG_SAMA5D4) && !defined(CONFIG_SAMA5D2) \
+	&& !defined(CONFIG_SAM9X60) && !defined(CONFIG_SAMA7G5) */
 
 	return 0;
 }

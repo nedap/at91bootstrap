@@ -40,8 +40,13 @@ char filename[FILENAME_BUF_LEN];
 #ifdef CONFIG_OF_LIBFDT
 char of_filename[FILENAME_BUF_LEN];
 #endif
+#ifdef CONFIG_OVERRIDE_CMDLINE_FROM_EXT_FILE
+char cmdline_file[FILENAME_BUF_LEN];
+char cmdline_args[CMDLINE_BUF_LEN];
+#endif
 #endif
 
+#if !defined(CONFIG_LOAD_NONE)
 void init_load_image(struct image_info *image)
 {
 	memset(image,		0, sizeof(*image));
@@ -93,6 +98,11 @@ void init_load_image(struct image_info *image)
 #ifdef CONFIG_OF_LIBFDT
 	image->of_filename = of_filename;
 #endif
+#ifdef CONFIG_OVERRIDE_CMDLINE_FROM_EXT_FILE
+	image->cmdline_file = cmdline_file;
+	strcpy(image->cmdline_file, CMDLINE_FILE);
+	image->cmdline_args = cmdline_args;
+#endif
 #endif
 
 #if defined(CONFIG_LOAD_LINUX) || defined(CONFIG_LOAD_ANDROID)
@@ -111,12 +121,15 @@ void init_load_image(struct image_info *image)
 #endif
 #endif
 }
+#endif
 
 void load_image_done(int retval)
 {
 	char *media;
 
-#if defined(CONFIG_FLASH)
+#if defined(CONFIG_LOAD_NONE)
+	media = "NONE: ";
+#elif defined(CONFIG_FLASH)
 	media = "FLASH: ";
 #elif defined(CONFIG_NANDFLASH)
 	media = "NAND: ";
@@ -131,8 +144,12 @@ void load_image_done(int retval)
 	if (media)
 		usart_puts(media);
 
-	if (retval == 0){
+	if (retval == 0) {
+#if defined(CONFIG_LOAD_NONE)
+		usart_puts("AT91Bootstrap completed. Can load application via JTAG and jump.\n");
+#else
 		usart_puts("Done to load image\n");
+#endif
 	}
 	if (retval == -1) {
 		usart_puts("Failed to load image\n");

@@ -25,9 +25,12 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "autoconf.h"
 #include "common.h"
 #include "hardware.h"
 #include "board.h"
+
+#include "string.h"
 
 #include "ff.h"
 
@@ -71,6 +74,48 @@ open_fail:
 
 }
 
+#ifdef CONFIG_OVERRIDE_CMDLINE_FROM_EXT_FILE
+static int sdcard_read_cmd(char *cmdline_file, char *cmdline_args)
+{
+	FIL 	file;
+	UINT	byte_to_read = CMDLINE_BUF_LEN;
+        UINT    byte_read;
+	FRESULT	fret;
+        int 	ret;
+
+	fret = f_open(&file, cmdline_file, FA_OPEN_EXISTING | FA_READ);
+	if (fret != FR_OK) {
+		dbg_info("*** FATFS: f_open, filename: [%s]: error\n", 
+                                                                  cmdline_file);
+                ret = -1;
+		goto open_fail;
+	}
+
+	do {
+		byte_read = 0;
+		fret = f_read(&file, (char *)(cmdline_args), byte_to_read,
+                                                                    &byte_read);
+	} while (0);
+
+        dbg_info("SD/MMC: kernel arg string: %s\n", cmdline_args);
+
+	if (fret != FR_OK) {
+		dbg_info("*** FATFS: cmdline f_read: error\n");
+		ret = -1;
+		goto read_fail;
+	}
+        
+        ret = 0;
+
+read_fail:
+	fret = f_close(&file);
+
+open_fail:
+	return ret;
+
+}
+#endif
+
 int load_sdcard(struct image_info *image)
 {
 	FATFS	fs;
@@ -102,32 +147,40 @@ int load_sdcard(struct image_info *image)
 					image->filename, image->dest);
 
 	ret = sdcard_loadimage(image->filename, image->dest);
-	if (ret)
+	if (ret) {
+		(void)f_mount(0, NULL);
 		return ret;
-
-	/* umount fs */
-	fret = f_mount(0, NULL);
-	if (fret != FR_OK) {
-		dbg_info("*** FATFS: f_mount umount error **\n");
-		return -1;
 	}
 
 #ifdef CONFIG_OF_LIBFDT
 	at91_board_set_dtb_name(image->of_filename);
 
-	/* mount fs */
-	fret = f_mount(0, &fs);
-	if (fret != FR_OK) {
-		dbg_info("*** FATFS: f_mount error **\n");
-		return -1;
-	}
+	if (strcmp(CONFIG_OF_OVERRIDE_DTB_NAME, "")) {
+                strcpy(image->of_filename, CONFIG_OF_OVERRIDE_DTB_NAME);
+        }
 
 	dbg_info("SD/MMC: dt blob: Read file %s to %x\n",
 			image->of_filename, image->of_dest);
 
 	ret = sdcard_loadimage(image->of_filename, image->of_dest);
-	if (ret)
+	if (ret) {
+		(void)f_mount(0, NULL);
 		return ret;
+	}
+
+#endif
+
+#ifdef CONFIG_OVERRIDE_CMDLINE_FROM_EXT_FILE
+	dbg_info("SD/MMC: kernel arg string: Read file %s\n",
+			image->cmdline_file);
+
+	ret = sdcard_read_cmd(image->cmdline_file, image->cmdline_args);
+	if (image->cmdline_args) {
+		(void)f_mount(0, NULL);
+		return ret;
+        }
+
+#endif
 
 	/* umount fs */
 	fret = f_mount(0, NULL);
@@ -135,7 +188,6 @@ int load_sdcard(struct image_info *image)
 		dbg_info("*** FATFS: f_mount umount error **\n");
 		return -1;
 	}
-#endif
 
 	return 0;
 }

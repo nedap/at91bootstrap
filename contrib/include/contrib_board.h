@@ -33,6 +33,10 @@
 #include "vinco.h"
 #endif
 
+#ifdef CONFIG_AT91SAM9G20_FOX
+#include "at91sam9g20_fox.h"
+#endif
+
 #ifdef CONFIG_AT91SAM9X5_ARIA
 #include "at91sam9x5_aria.h"
 #endif
@@ -41,12 +45,28 @@
 #include "at91sam9x5_arietta.h"
 #endif
 
+#ifdef CONFIG_PICOSAM9G45
+#include "pico_sam9g45.h"
+#endif
+
 #ifdef CONFIG_SAMA5D3_ACQUA
 #include "sama5d3_acqua.h"
 #endif
 
+#ifdef CONFIG_SAMA5D3_STEPHAN
+#include "sama5d3_stephan.h"
+#endif
+
+#ifdef CONFIG_SAMA5D2_ROADRUNNER
+#include "sama5d2_roadrunner.h"
+#endif
+
 #ifdef CONFIG_CORE9G25
 #include "core9g25.h"
+#endif
+
+#ifdef CONFIG_SAMA5D3_LINEA
+#include "sama5d3_linea.h"
 #endif
 
 #endif

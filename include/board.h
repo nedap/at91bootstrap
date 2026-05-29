@@ -48,6 +48,10 @@
 #include "at91sam9m10g45ek.h"
 #endif
 
+#ifdef CONFIG_NEDAP9G45
+#include "nedap9g45.h"
+#endif
+
 #ifdef CONFIG_AT91SAM9261EK
 #include "at91sam9261ek.h"
 #endif
@@ -66,6 +70,18 @@
 
 #ifdef CONFIG_AT91SAM9N12EK
 #include "at91sam9n12ek.h"
+#endif
+
+#ifdef CONFIG_SAM9X60EK
+#include "sam9x60ek.h"
+#endif
+
+#ifdef CONFIG_SAM9X60_DDR2_SIP_EB
+#include "sam9x60_ddr2_sip_eb.h"
+#endif
+
+#ifdef CONFIG_SAM9X60_SDR_SIP_EB
+#include "sam9x60_sdr_sip_eb.h"
 #endif
 
 #ifdef CONFIG_SAMA5D3XEK
@@ -88,12 +104,32 @@
 #include "sama5d4_xplained.h"
 #endif
 
-#ifdef CONFIG_SAMA5D2_PTC
-#include "sama5d2_ptc.h"
+#ifdef CONFIG_SAMA5D2_PTC_EK
+#include "sama5d2_ptc_ek.h"
 #endif
 
 #ifdef CONFIG_SAMA5D2_XPLAINED
 #include "sama5d2_xplained.h"
+#endif
+
+#ifdef CONFIG_SAMA5D27_SOM1_EK
+#include "sama5d27_som1_ek.h"
+#endif
+
+#ifdef CONFIG_SAMA5D27_WLSOM1_EK
+#include "sama5d27_wlsom1_ek.h"
+#endif
+
+#ifdef CONFIG_SAMA5D2_LPDDR2SIP_VB
+#include "sama5d2_lpddr2sip_vb.h"
+#endif
+
+#ifdef CONFIG_SAMA5D2_ICP
+#include "sama5d2_icp.h"
+#endif
+
+#ifdef CONFIG_SAMA7G5EK
+#include "sama7g5ek.h"
 #endif
 
 #include "contrib_board.h"
