@@ -430,7 +430,7 @@ $(CONFIG)/at91bootstrap-config $(BINDIR):
 	@$(MKDIR) -p $@
 
 %_defconfig:
-	@(conf_file=`find ./ -name $@`; \
+	@(conf_file=`find board contrib/board -name $@`; \
 	if [ "$$conf_file"x != "x" ]; then \
 		cp $$conf_file .config; \
 	else \

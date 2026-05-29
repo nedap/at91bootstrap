@@ -32,19 +32,24 @@
 
 int slowclk_enable_osc32(void)
 {
+	/* start a internal timer */
+	start_interval_timer();
+
 #if !defined(CONFIG_SAMA5D4) && !defined(CONFIG_SAMA5D2)
 	unsigned int reg;
+
+	reg = readl(AT91C_BASE_SCKCR);
+
+	/* If OSC32 is already enabled, skip to avoid race during power glitch */
+	if (reg & AT91C_SLCKSEL_OSC32EN)
+		return 0;
 
 	/*
 	 * Enable the 32768 Hz oscillator by setting the bit OSC32EN to 1
 	 */
-	reg = readl(AT91C_BASE_SCKCR);
 	reg |= AT91C_SLCKSEL_OSC32EN;
 	writel(reg, AT91C_BASE_SCKCR);
 #endif
-
-	/* start a internal timer */
-	start_interval_timer();
 
 	return 0;
 }
@@ -68,10 +73,15 @@ static void slowclk_disable_rc32(void)
 {
 	unsigned int reg;
 
+	reg = readl(AT91C_BASE_SCKCR);
+
+	/* If RC32 is already disabled, skip */
+	if (!(reg & AT91C_SLCKSEL_RCEN))
+		return;
+
 	/*
 	 * Disable the 32kHz RC oscillator by setting the bit RCEN to 0
 	 */
-	reg = readl(AT91C_BASE_SCKCR);
 	reg &= ~AT91C_SLCKSEL_RCEN;
 	writel(reg, AT91C_BASE_SCKCR);
 }
@@ -107,6 +117,17 @@ static int slowclk_select_osc32(void)
 
 int slowclk_switch_osc32(void)
 {
+	unsigned int reg;
+
+	/*
+	 * If the external 32kHz oscillator is already selected and enabled,
+	 * skip the entire switch sequence. Re-configuring during a power
+	 * glitch could disable all slow clock sources and brick the board.
+	 */
+	reg = readl(AT91C_BASE_SCKCR) & 0x0F;
+	if ((reg & AT91C_SLCKSEL_OSCSEL) && (reg & AT91C_SLCKSEL_OSC32EN))
+		return 0;
+
 	slowclk_wait_osc32_stable();
 
 	slowclk_select_osc32();
