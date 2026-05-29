@@ -1,5 +1,5 @@
 #
-# Default config file is in $(TOPDIR)/board/$(BOARD_NAME)/*_defconfig
+# Default config file is in board/$(BOARD_NAME)/*_defconfig
 # First, run xxx_defconfig
 # Then, `make menuconfig' if needed
 #
@@ -10,26 +10,53 @@
 # o  print "Entering directory ...";
 MAKEFLAGS += -rR --no-print-directory
 
-TOPDIR=$(shell pwd)
-
-CONFIG_CONFIG_IN=Config.in
+CONFIG_CONFIG_IN=Kconfig
 CONFIG_DEFCONFIG=.defconfig
 CONFIG=config
 
-CONFIG_SHELL=$(shell which bash)
+# Detect if the current command interpreter is a Unix-like shell,
+# or a non-*nix interpreter such as Command Prompt/PowerShell.
+# When given a *nix shell, we'll further assume that all the necessary tools
+# are installed, and enable all the rules and features.
+# With a non-*nix interpreter we'll trim the recipes, skipping unsupported
+# commands and scripts.
+ifeq ($(strip $(shell echo $$0)),$$0)
+NIX_SHELL=
+else
+NIX_SHELL=1
+CONFIG_SHELL := $(shell which bash)
 ifeq ($(CONFIG_SHELL),)
-$(error GNU Bash is needed to build Bootstrap!)
+$(error GNU Bash is needed to build Kconfig host tools!)
+endif
 endif
 
-BINDIR:=$(TOPDIR)/binaries
+BINDIR:=binaries
+SYMLINK ?= at91bootstrap.bin
+SYMLINK_BOOT ?= boot.bin
+SYMLINK_ELF ?= at91bootstrap.elf
+SYMLINK_ELF_STRIPPED ?= at91bootstrap-stripped.elf
 
-DATE := $(shell date)
-VERSION := 3.8.7
+include	host-utilities/host.mk
+
+ifeq ($(origin BUILD_DATE), undefined)
+# Automatically escape '%' symbols when recipes are implemented as batch files
+PERCENT := $(if $(findstring %%_dummy_,$(shell echo %%_dummy_)),%,%%)
+# see https://reproducible-builds.org/docs/source-date-epoch/#makefile
+DATE_FMT = +$(PERCENT)Y-$(PERCENT)m-$(PERCENT)d $(PERCENT)H:$(PERCENT)M:$(PERCENT)S
+ifdef SOURCE_DATE_EPOCH
+	BUILD_DATE := $(shell $(DATE) -u -d "@$(SOURCE_DATE_EPOCH)" "$(DATE_FMT)" 2>$(DEV_NULL) || $(DATE) -u -r "$(SOURCE_DATE_EPOCH)" "$(DATE_FMT)" 2>$(DEV_NULL) || $(DATE) -u "$(DATE_FMT)")
+else
+	BUILD_DATE := $(shell $(DATE) "$(DATE_FMT)")
+endif
+endif
+VERSION := 3.10.4
 REVISION :=
-SCMINFO := $(shell ($(TOPDIR)/host-utilities/setlocalversion $(TOPDIR)))
+ifdef NIX_SHELL
+SCMINFO := $(shell (host-utilities/setlocalversion))
+endif
 
 ifeq ($(SCMINFO),)
--include $(TOPDIR)/scminfo.mk
+-include scminfo.mk
 SCMINFO=$(RECORD_SCMINFO)
 endif
 
@@ -43,6 +70,12 @@ Q=@
 export Q
 endif
 
+# Function brief: Search for existing files, recursively
+# param 1: List of directories to search in
+# param 2: List of patterns to match
+# return: List of paths to the matching files, relative to and including param 1
+rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(strip $(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d)))
+
 noconfig_targets:= menuconfig defconfig $(CONFIG) oldconfig savedefconfig
 
 # Check first if we want to configure at91bootstrap
@@ -51,9 +84,7 @@ ifeq ($(filter $(noconfig_targets),$(MAKECMDGOALS)),)
 -include .config
 endif
 
-include	host-utilities/host.mk
-
-ifeq ($(HAVE_DOT_CONFIG),)
+ifeq ($(CONFIG_HAVE_DOT_CONFIG),)
 
 all: menuconfig
 
@@ -63,22 +94,19 @@ all: menuconfig
 HOSTCFLAGS=$(CFLAGS_FOR_BUILD)
 export HOSTCFLAGS
 
-$(CONFIG)/conf:
-	@mkdir -p $(CONFIG)/at91bootstrap-config
+$(CONFIG)/conf: | $(CONFIG)/at91bootstrap-config
 	@$(MAKE) CC="$(HOSTCC)" -C $(CONFIG) conf
 	-@if [ ! -f .config ]; then \
 		cp $(CONFIG_DEFCONFIG) .config; \
 	fi
 
-$(CONFIG)/mconf:
-	@mkdir -p $(CONFIG)/at91bootstrap-config
+$(CONFIG)/mconf: | $(CONFIG)/at91bootstrap-config
 	@$(MAKE) CC="$(HOSTCC)" -C $(CONFIG) conf mconf
 	-@if [ ! -f .config ]; then \
 		cp $(CONFIG_DEFCONFIG) .config; \
 	fi
 
 menuconfig: $(CONFIG)/mconf
-	@mkdir -p $(CONFIG)/at91bootstrap-config
 	@if ! KCONFIG_AUTOCONFIG=$(CONFIG)/at91bootstrap-config/auto.conf \
 		KCONFIG_AUTOHEADER=$(CONFIG)/at91bootstrap-config/autoconf.h \
 		$(CONFIG)/mconf $(CONFIG_CONFIG_IN); then \
@@ -86,32 +114,28 @@ menuconfig: $(CONFIG)/mconf
 	fi
 
 $(CONFIG): $(CONFIG)/conf
-	@mkdir -p $(CONFIG)/at91bootstrap-config
 	@KCONFIG_AUTOCONFIG=$(CONFIG)/at91bootstrap-config/auto.conf \
 		KCONFIG_AUTOHEADER=$(CONFIG)/at91bootstrap-config/autoconf.h \
 		$(CONFIG)/conf $(CONFIG_CONFIG_IN)
 
 oldconfig: $(CONFIG)/conf
-	@mkdir -p $(CONFIG)/at91bootstrap-config
 	@KCONFIG_AUTOCONFIG=$(CONFIG)/at91bootstrap-config/auto.conf \
 		KCONFIG_AUTOHEADER=$(CONFIG)/at91bootstrap-config/autoconf.h \
 		$(CONFIG)/conf --oldconfig $(CONFIG_CONFIG_IN)
 
 defconfig: $(CONFIG)/conf
-	@mkdir -p $(CONFIG)/at91bootstrap-config
 	@KCONFIG_AUTOCONFIG=$(CONFIG)/at91bootstrap-config/auto.conf \
 		KCONFIG_AUTOHEADER=$(CONFIG)/at91bootstrap-config/autoconf.h \
 		$(CONFIG)/conf --defconfig=.config $(CONFIG_CONFIG_IN)
 
 savedefconfig: $(CONFIG)/conf
-	@mkdir -p $(CONFIG)/at91bootstrap-config
 	@KCONFIG_AUTOCONFIG=$(CONFIG)/at91bootstrap-config/auto.conf \
 		KCONFIG_AUTOHEADER=$(CONFIG)/at91bootstrap-config/autoconf.h \
 		$(CONFIG)/conf --savedefconfig=defconfig $(CONFIG_CONFIG_IN)
 
 else #  Have DOT Config
 
-HOSTARCH := $(shell uname -m | sed -e s/arm.*/arm/)
+HOSTARCH := $(patsubst arm%,arm,$(shell uname -m))
 
 AS=$(CROSS_COMPILE)gcc
 CC=$(CROSS_COMPILE)gcc
@@ -132,13 +156,19 @@ MEMORY := $(strip $(subst ",,$(CONFIG_MEMORY)))
 IMAGE_NAME:= $(strip $(subst ",,$(CONFIG_IMAGE_NAME)))
 CARD_SUFFIX := $(strip $(subst ",,$(CONFIG_CARD_SUFFIX)))
 MEM_BANK := $(strip $(subst ",,$(CONFIG_MEM_BANK)))
-MEM_SIZE := $(strip $(subst ",,$(CONFIG_MEM_SIZE)))
+MEM_BANK2 := $(strip $(subst ",,$(CONFIG_MEM_BANK2)))
 LINUX_KERNEL_ARG_STRING := $(strip $(subst ",,$(CONFIG_LINUX_KERNEL_ARG_STRING)))
+LINUX_KERNEL_ARG_STRING_FILE := $(strip $(subst ",,$(CONFIG_LINUX_KERNEL_ARG_STRING_FILE)))
 
 # Board definitions
 BOARDNAME:=$(strip $(subst ",,$(CONFIG_BOARDNAME)))
 
+ifeq ($(CONFIG_OVERRIDE_MACH_TYPE), y)
+MACH_TYPE:=$(strip $(subst ",,$(CONFIG_CUSTOM_MACH_TYPE)))
+else
 MACH_TYPE:=$(strip $(subst ",,$(CONFIG_MACH_TYPE)))
+endif
+
 LINK_ADDR:=$(strip $(subst ",,$(CONFIG_LINK_ADDR)))
 DATA_SECTION_ADDR:=$(strip $(subst ",,$(CONFIG_DATA_SECTION_ADDR)))
 TOP_OF_MEMORY:=$(strip $(subst ",,$(CONFIG_TOP_OF_MEMORY)))
@@ -148,7 +178,6 @@ CRYSTAL:=$(strip $(subst ",,$(CONFIG_CRYSTAL)))
 
 # driver definitions
 SPI_CLK:=$(strip $(subst ",,$(CONFIG_SPI_CLK)))
-QSPI_CLK:=$(strip $(subst ",,$(CONFIG_QSPI_CLK)))
 SPI_BOOT:=$(strip $(subst ",,$(CONFIG_SPI_BOOT)))
 
 ifeq ($(REVISION),)
@@ -164,27 +193,31 @@ BLOB:=
 endif
 
 ifeq ($(CONFIG_LOAD_LINUX), y)
-TARGET_NAME:=linux-$(subst I,i,$(IMAGE_NAME))
+TARGET_NAME:=linux-$(or $(subst I,i,$(IMAGE_NAME)),image)
 endif
 
 ifeq ($(CONFIG_LOAD_ANDROID), y)
-TARGET_NAME:=android-$(subst I,i,$(IMAGE_NAME))
+TARGET_NAME:=android-$(or $(subst I,i,$(IMAGE_NAME)),image)
 endif
 
 ifeq ($(CONFIG_LOAD_UBOOT), y)
-TARGET_NAME:=$(subst -,,$(basename $(IMAGE_NAME)))
+TARGET_NAME:=$(or $(subst -,,$(basename $(IMAGE_NAME))),uboot)
 endif
 
 ifeq ($(CONFIG_LOAD_64KB), y)
-TARGET_NAME:=$(basename $(IMAGE_NAME))
+TARGET_NAME:=$(or $(basename $(IMAGE_NAME)),softpack)
 endif
 
 ifeq ($(CONFIG_LOAD_1MB), y)
-TARGET_NAME:=$(basename $(IMAGE_NAME))
+TARGET_NAME:=$(or $(basename $(IMAGE_NAME)),softpack)
 endif
 
 ifeq ($(CONFIG_LOAD_4MB), y)
-TARGET_NAME:=$(basename $(IMAGE_NAME))
+TARGET_NAME:=$(or $(basename $(IMAGE_NAME)),softpack)
+endif
+
+ifeq ($(CONFIG_LOAD_NONE), y)
+TARGET_NAME:=$(or $(basename $(IMAGE_NAME)),none)
 endif
 
 BOOT_NAME=$(BOARDNAME)-$(PROJECT)$(CARD_SUFFIX)boot-$(TARGET_NAME)$(BLOB)-$(VERSION)$(REV)
@@ -194,22 +227,17 @@ ifeq ($(IMAGE),)
 IMAGE=$(BOOT_NAME).bin
 endif
 
-ifeq ($(SYMLINK),)
-SYMLINK=at91bootstrap.bin
-endif
+COBJS-y:= main.o
+SOBJS-y:= crt0_gnu.o
 
-ifeq ($(SYMLINK_BOOT),)
-SYMLINK_BOOT=boot.bin
-endif
-
-COBJS-y:= $(TOPDIR)/main.o
-SOBJS-y:= $(TOPDIR)/crt0_gnu.o
-
-BOARD_LOCATE=$(shell find $(TOPDIR)/board/ -name $(BOARDNAME) -type d)
+# Verify that BOARDNAME is the name of a subdirectory of board/
+BOARD_LOCATE=$(if $(wildcard board/$(BOARDNAME)/.),board/$(BOARDNAME))
 ifeq ("$(realpath $(BOARD_LOCATE))", "")
-BOARD_LOCATE=$(shell find $(TOPDIR)/contrib/board/ -name $(BOARDNAME) -type d)
+# List all vendor subdirectories found under contrib/board/
+CONTRIB_VENDORS=$(foreach file,$(wildcard contrib/board/*),$(if $(wildcard $(addsuffix /.,$(file))),$(file)))
+BOARD_LOCATE=$(firstword $(wildcard $(addsuffix /$(BOARDNAME),$(CONTRIB_VENDORS))))
 ifeq ("$(realpath $(BOARD_LOCATE))", "")
-$(error ERROR: *** file: $(BOARD_LOCATE) does not found!)
+$(error ERROR: *** $(BOARDNAME) board not found!)
 endif
 endif
 
@@ -221,22 +249,20 @@ include	driver/driver.mk
 include	contrib/driver/driver.mk
 include	fs/src/fat.mk
 
-#$(SOBJS-y:.o=.S)
-
-SRCS:= $(COBJS-y:.o=.c)
-OBJS:= $(SOBJS-y) $(COBJS-y)
 GC_SECTIONS=--gc-sections
 
-NOSTDINC_FLAGS=-nostdinc -isystem $(shell $(CC) -print-file-name=include)
+# $(EXTRA_CC_ARGS) can be used to pass extra CC parameters to toolchain
+# For example, Yocto Project can pass the sysroot
+NOSTDINC_FLAGS := -nostdinc -isystem "$(shell "$(CC)" $(EXTRA_CC_ARGS) -print-file-name=include)"
 
-CPPFLAGS=$(NOSTDINC_FLAGS) -ffunction-sections -g -Os -Wall \
+CPPFLAGS=$(EXTRA_CC_ARGS) $(NOSTDINC_FLAGS) -ffunction-sections -g -Os -Wall \
 	-mno-unaligned-access \
-	-fno-stack-protector -fno-common \
+	-fno-stack-protector -fno-common -fno-builtin -fno-jump-tables -fno-pie \
 	-I$(INCL) -Icontrib/include -Iinclude -Ifs/include \
-	-I$(TOPDIR)/config/at91bootstrap-config \
-	-DAT91BOOTSTRAP_VERSION=\"$(VERSION)$(REV)$(SCMINFO)\" -DCOMPILE_TIME="\"$(DATE)\""
+	-I$(CONFIG)/at91bootstrap-config \
+	-DAT91BOOTSTRAP_VERSION=\"$(VERSION)$(REV)$(SCMINFO)\" -DCOMPILE_TIME="\"$(BUILD_DATE)\""
 
-ASFLAGS=-g -Os -Wall -I$(INCL) -Iinclude -Icontrib/include
+ASFLAGS=$(EXTRA_CC_ARGS) -g -Os -Wall -I$(INCL) -Iinclude -Icontrib/include
 
 include	toplevel_cpp.mk
 include	board/board_cpp.mk
@@ -248,6 +274,8 @@ $(warning WARNING: *** file: $(BOARD_LOCATE)/board.mk are not found!)
 endif
 
 include	driver/driver_cpp.mk
+
+OBJS:= $(SOBJS-y) $(COBJS-y)
 
 ifeq ($(CONFIG_ENTER_NWD), y)
 link_script:=elf32-littlearm-tz.lds
@@ -261,14 +289,16 @@ endif
 #    --cref:    add cross reference to map file
 #  -lc 	   : 	tells the linker to tie in newlib
 #  -lgcc   : 	tells the linker to tie in newlib
-LDFLAGS=-nostartfiles -Map=$(BINDIR)/$(BOOT_NAME).map --cref -static
+LDFLAGS=$(EXTRA_CC_ARGS) -Map=$(BINDIR)/$(BOOT_NAME).map --cref -static
 LDFLAGS+=-T $(link_script) $(GC_SECTIONS) -Ttext $(LINK_ADDR)
 
 ifneq ($(DATA_SECTION_ADDR),)
 LDFLAGS+=-Tdata $(DATA_SECTION_ADDR)
 endif
 
-gccversion := $(shell expr `$(CC) -dumpversion`)
+REMOVE_SECTIONS=-R .note -R .comment -R .note.gnu.build-id
+
+gccversion := $(shell "$(CC)" -dumpversion)
 
 ifdef YYY   # For other utils
 ifeq ($(CC),gcc) 
@@ -278,56 +308,72 @@ TARGETS=$(AT91BOOTSTRAP) host-utilities .config filesize
 endif
 endif
 
-TARGETS=$(AT91BOOTSTRAP)
+
+TARGETS=CheckCrossCompile PrintFlags $(AT91BOOTSTRAP)
+ifdef NIX_SHELL
+TARGETS+=ChkFileSize
+endif
+
+ifeq ($(CONFIG_NANDFLASH)$(CONFIG_USE_PMECC), yy)
+TARGETS+=${AT91BOOTSTRAP}.pmecc
+endif
 
 PHONY:=all
 
-all: CheckCrossCompile PrintFlags $(AT91BOOTSTRAP) ChkFileSize ${AT91BOOTSTRAP}.pmecc
+all: $(TARGETS)
 
 CheckCrossCompile:
-	@( if [ "$(HOSTARCH)" != "arm" ]; then \
-		if [ "x$(CROSS_COMPILE)" = "x" ]; then \
-			echo "error: Environment variable "CROSS_COMPILE" must be defined!"; \
-			exit 2; \
-		fi \
-	fi )
+	$(if $(filter-out arm,$(HOSTARCH)),$(if $(CROSS_COMPILE),, \
+		$(error Error: the CROSS_COMPILE environment variable must be defined)))
 
 PrintFlags:
-	@echo CC
-	@echo ========
-	@echo $(CC) $(gccversion)&& echo
-	@echo as FLAGS
-	@echo ========
-	@echo $(ASFLAGS) && echo
-	@echo gcc FLAGS
-	@echo =========
-	@echo $(CPPFLAGS) && echo
-	@echo ld FLAGS
-	@echo ========
-	@echo $(LDFLAGS) && echo
+	$(info CC)
+	$(info ========)
+	$(info $(CC) $(gccversion))
+	$(info )
+	$(info as FLAGS)
+	$(info ========)
+	$(info $(ASFLAGS))
+	$(info )
+	$(info gcc FLAGS)
+	$(info =========)
+	$(info $(CPPFLAGS))
+	$(info )
+	$(info ld FLAGS)
+	$(info ========)
+	$(info $(LDFLAGS))
+	$(info )
 
-$(AT91BOOTSTRAP): $(OBJS)
-	$(if $(wildcard $(BINDIR)),,mkdir -p $(BINDIR))
+$(AT91BOOTSTRAP): $(OBJS) | $(BINDIR)
 	@echo "  LD        "$(BOOT_NAME).elf
-	$(Q)$(LD) $(LDFLAGS) -n -o $(BINDIR)/$(BOOT_NAME).elf $(OBJS)
-#	@$(OBJCOPY) --strip-debug --strip-unneeded $(BINDIR)/$(BOOT_NAME).elf -O binary $(BINDIR)/$(BOOT_NAME).bin
-	@$(OBJCOPY) --strip-all $(BINDIR)/$(BOOT_NAME).elf -O binary $@
+	$(Q)"$(LD)" $(LDFLAGS) -n -o $(BINDIR)/$(BOOT_NAME).elf $(OBJS)
+	@"$(OBJCOPY)" --strip-all $(REMOVE_SECTIONS) $(BINDIR)/$(BOOT_NAME).elf -O binary $@
+ifdef NIX_SHELL
+	@ln -sf $(BOOT_NAME).elf ${BINDIR}/${SYMLINK_ELF}
+	@ln -sf $(BOOT_NAME).elf ${BINDIR}/${SYMLINK_ELF_STRIPPED}
 	@ln -sf $(BOOT_NAME).bin ${BINDIR}/${SYMLINK}
 	@ln -sf $(BOOT_NAME).bin ${BINDIR}/${SYMLINK_BOOT}
+else
+	@cp -l ${BINDIR}/$(BOOT_NAME).elf ${BINDIR}/${SYMLINK_ELF}
+	@cp -l ${BINDIR}/$(BOOT_NAME).elf ${BINDIR}/${SYMLINK_ELF_STRIPPED}
+	@cp -l ${BINDIR}/$(BOOT_NAME).bin ${BINDIR}/${SYMLINK}
+	@cp -l ${BINDIR}/$(BOOT_NAME).bin ${BINDIR}/${SYMLINK_BOOT}
+endif
 
 %.o : %.c .config
 	@echo "  CC        "$<
-	@$(CC) $(CPPFLAGS) -c -o $@ $<
+	@"$(CC)" $(CPPFLAGS) -c -o $@ $<
 
 %.o : %.S .config
 	@echo "  AS        "$<
-	@$(AS) $(ASFLAGS)  -c -o $@  $<
+	@"$(AS)" $(ASFLAGS) -c -o $@ $<
 
-$(AT91BOOTSTRAP).pmecc: $(AT91BOOTSTRAP)
-ifeq ($(CONFIG_NANDFLASH), y)
-ifeq ($(CONFIG_USE_PMECC), y)
-	$(Q)./scripts/addpmecchead.py $(AT91BOOTSTRAP) $(AT91BOOTSTRAP).pmecc $(BOARDNAME)
-endif
+$(AT91BOOTSTRAP).pmecc: $(BINDIR)/pmecc.tmp $(AT91BOOTSTRAP)
+	$(Q)cat $(BINDIR)/pmecc.tmp $(AT91BOOTSTRAP) > $@
+
+$(BINDIR)/pmecc.tmp: .config | $(BINDIR)
+ifdef NIX_SHELL
+	$(Q)./scripts/addpmecchead.py .config $(BINDIR)
 endif
 
 PHONY+= bootstrap
@@ -354,12 +400,37 @@ ChkFileSize: $(AT91BOOTSTRAP)
 		stack_space=`expr $(BOOTSTRAP_MAXSIZE) - $$fsize`; \
 		echo "[Attention] The space left for stack is $$stack_space bytes"; \
 	  fi )
-endif  # HAVE_DOT_CONFIG
+endif  # CONFIG_HAVE_DOT_CONFIG
 
 PHONY+= rebuild
 
+prepare: .prepared | $(CONFIG)/at91bootstrap-config $(BINDIR)
+
+.prepared: $(wildcard .config)
+	@echo AT91BOOTSTRAP_PREP_REV = 1 > $@
+	@echo AT91BOOTSTRAP_VERSIONNO = $(VERSION) >> $@
+	@echo KBUILD_KCONFIG = $(CONFIG_CONFIG_IN) >> $@
+	@echo KCONFIG_DEFCONFIG = $(CONFIG_DEFCONFIG) >> $@
+	@echo KCONFIG_CONFIG = .config >> $@
+	@echo KCONFIG_AUTOCONFIGOUTPUT = $(CONFIG)/at91bootstrap-config >> $@
+	@echo KCONFIG_AUTOCONFIG = $(CONFIG)/at91bootstrap-config/auto.conf >> $@
+	@echo KCONFIG_AUTOHEADER = $(CONFIG)/at91bootstrap-config/autoconf.h >> $@
+	@echo AT91BOOTSTRAP_SCMREVIN = scminfo.mk >> $@
+	@echo AT91BOOTSTRAP_BINOUTPUT = $(BINDIR) >> $@
+	@echo AT91BOOTSTRAP_ELF = $(BINDIR)/$(SYMLINK_ELF) >> $@
+	@echo AT91BOOTSTRAP_BIN = $(BINDIR)/$(SYMLINK) >> $@
+ifneq ($(CONFIG_HAVE_DOT_CONFIG),)
+	@echo AT91BOOTSTRAP_MAP = $(BINDIR)/$(BOOT_NAME).map >> $@
+	@echo AT91BOOTSTRAP_VERSIONEXTD = $(VERSION)$(REV)$(SCMINFO) >> $@
+	@echo AT91BOOTSTRAP_TARBALL = $(TARBALL_NAME) >> $@
+	@echo AT91BOOTSTRAP_BOARDDIR = $(BOARD_LOCATE) >> $@
+endif
+
+$(CONFIG)/at91bootstrap-config $(BINDIR):
+	@$(MKDIR) -p $@
+
 %_defconfig:
-	@(conf_file=`find ./ -name $@`; \
+	@(conf_file=`find board contrib/board -name $@`; \
 	if [ "$$conf_file"x != "x" ]; then \
 		cp $$conf_file .config; \
 	else \
@@ -387,14 +458,7 @@ debug:
 PHONY+=update no-cross-compiler debug
 
 distrib: mrproper
-	$(Q)find . -type f \( -name .depend \
-		-o -name '*.srec' \
-		-o -name '*.elf' \
-		-o -name '*.map' \
-		-o -name '*.o' \
-		-o -name '*~' \) \
-		-print0 \
-		| xargs -0 rm -f
+	$(Q)rm -f  $(call rwildcard,.,*.elf *.map)
 	$(Q)rm -fr result
 	$(Q)rm -fr build
 	$(Q)rm -fr ..make.deps.tmp
@@ -402,26 +466,40 @@ distrib: mrproper
 
 config-clean:
 	@echo "  CLEAN        "configuration files!
-	$(Q)make -C config distclean
+	$(Q)$(MAKE) -C config distclean
 	$(Q)rm -fr config/at91bootstrap-config
 	$(Q)rm -f  config/.depend
 
 clean:
 	@echo "  CLEAN        "obj and misc files!
-	$(Q)find . -type f \( -name .depend \
-		-o -name '*.srec' \
-		-o -name '*.o' \
-		-o -name '*~' \) \
-		-print0 \
-		| xargs -0 rm -f
+	$(Q)rm -f $(CONFIG)/.depend
+	$(Q)rm -f $(call rwildcard,.,*.o *.srec *~)
 
 distclean: clean config-clean
 #	rm -fr $(BINDIR)
 	$(Q)rm -fr .config .config.cmd .config.old
 	$(Q)rm -fr .auto.deps
 	$(Q)rm -f .installed
-	$(Q)rm -f ..*.tmp
+	$(Q)rm -fr ..make.deps.tmp ..config.tmp
+	$(Q)rm -f $(BINDIR)/pmecc.tmp
 	$(Q)rm -f .configured
+	$(Q)rm -f .prepared
+	$(Q)rm -f $(subst $$,\$$,$(call rwildcard,scripts,*$$py.class))
+	$(Q)rm -fr debug
+	$(Q)rm -f default.config
+	$(Q)rm -f default.config.old
+	$(Q)rm -f nbproject/Makefile-default.mk
+	$(Q)rm -f nbproject/Makefile-genesis.properties
+	$(Q)rm -f nbproject/Makefile-impl.mk
+	$(Q)rm -f nbproject/Makefile-local-default.mk
+	$(Q)rm -f nbproject/Makefile-variables.mk
+	$(Q)rm -f nbproject/Package-default.bash
+	$(Q)rm -fr nbproject/private
+
+mplabclean: clean
+	@echo "  CLEAN        "binary files!
+	$(Q)rm -fr $(BINDIR)
+	$(Q)rm -fr log
 
 mrproper: distclean
 	@echo "  CLEAN        "binary files!
@@ -432,7 +510,7 @@ PHONY+=distrib config-clean clean distclean mrproper
 
 tarball:
 	@echo "Tar the source code to ${TARBALL_NAME}"
-	$(Q)mkdir -p ${TARBALL_DIR}
+	$(Q)$(MKDIR) -p ${TARBALL_DIR}
 	$(Q)git archive --prefix=${TARBALL_PREFIX} HEAD | gzip > ${TARBALL_DIR}/${TARBALL_NAME}
 	$(Q)echo "RECORD_SCMINFO=${SCMINFO}" > ${TARBALL_DIR}/scminfo.mk
 	$(Q)cd ${TARBALL_DIR}; tar -xzf ${TARBALL_NAME}

@@ -29,9 +29,18 @@
 #include "board_hw_info.h"
 #include "debug.h"
 
-#define	EK_AT24XX_ADDR		0x54
-
+#ifdef CONFIG_SAMA5D2_ICP
+/* ICP EK has different EEPROM */
+#define	EK_AT24XX_ADDR		0x50
+#define	MAX_AT24XX_BYTES	128
+#elif defined(CONFIG_SAM9X60EK) || defined(CONFIG_SAM9X60_DDR2_SIP_EB)
+#define	EK_AT24XX_ADDR		0x53
+#define	MAX_AT24XX_BYTES	128
+#else
+#define EK_AT24XX_ADDR		0x54
 #define	MAX_AT24XX_BYTES	256
+#endif
+
 #define EK_INFO_OFFSET		(MAX_AT24XX_BYTES - HW_INFO_TOTAL_SIZE)
 
 static unsigned int at24_get_twi_bus(void)

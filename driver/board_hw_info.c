@@ -83,6 +83,8 @@ typedef struct board_hw_info {
 	unsigned char revision_id;
 	unsigned char bom_revision;
 	unsigned char vendor_id;
+	unsigned char year;
+	unsigned char week;
 } board_info_t;
 
 static unsigned int sn;
@@ -116,6 +118,8 @@ static struct {
 	{"SAMA5D44-MB",	BOARD_TYPE_EK,	BOARD_ID_SAMA5D4_MB},
 	{"SAMA5D4-XULT",BOARD_TYPE_EK,	BOARD_ID_SAMA5D4_MB},
 	{"SAMA5D2-XULT",BOARD_TYPE_EK,	BOARD_ID_SAMA5D2_XULT},
+	{"SAMA5D2-ICP", BOARD_TYPE_EK,	BOARD_ID_SAMA5D2_ICP},
+	{"SAM9X60-EK",	BOARD_TYPE_EK,	BOARD_ID_SAM9X60_EK},
 	{0,		0,		0},
 };
 
@@ -132,6 +136,8 @@ static struct {
 	{"ATMEL-RFO",	VENDOR_ATMEL_RFO},
 	{"ATMEL RFO",	VENDOR_ATMEL_RFO},
 	{"ATMEL-RF0",	VENDOR_ATMEL_RFO},
+	{"MCHIP RFO",	VENDOR_MCHIP_RFO},
+	{"MCHIP RDC",	VENDOR_MCHIP_RDC},
 	{0,		0},
 };
 
@@ -185,7 +191,7 @@ static int parse_board_hw_info(unsigned char *buff,
 	hw_info_map_t *p = (hw_info_map_t *)buff;
 
 	if (p->total_bytes != HW_INFO_TOTAL_SIZE) {
-		dbg_info("HW Info: The total size: %x isn't correct\n",
+		dbg_loud("HW Info: The total size: %x isn't correct\n",
 			 p->total_bytes);
 		return -1;
 	}
@@ -254,7 +260,7 @@ static int parse_alt_board_hw_info(unsigned char *buff,
 	hw_info_alt_map_t *p = (hw_info_alt_map_t *)buff;
 
 	if (p->size_byte != 0x41) {
-		dbg_info("%s: Size of byte is incorrect\n");
+		dbg_info("%s: Size of byte is incorrect\n", __func__);
 		return -1;
 	}
 
@@ -288,6 +294,9 @@ static int parse_alt_board_hw_info(unsigned char *buff,
 	bd_info->revision_code = normalize_rev_code(p->revision_code);
 	bd_info->revision_id = normalize_rev_id_map_b(p->revision_id);
 	bd_info->bom_revision = normalize_bom_revision(p->bom_revision);
+
+	bd_info->year = p->year;
+	bd_info->week = p->week;
 
 	return 0;
 
@@ -473,6 +482,14 @@ static unsigned int set_default_sn(void)
 #elif defined(CONFIG_SAMA5D2_XPLAINED)
 	board_id_ek = BOARD_ID_SAMA5D2_XULT;
 	vendor_ek = VENDOR_ATMEL_RFO;
+#elif defined(CONFIG_SAMA5D2_ICP)
+	board_id_ek = BOARD_ID_SAMA5D2_ICP;
+	vendor_ek = VENDOR_MCHIP_RFO;
+#elif defined(CONFIG_SAM9X60EK) || defined(CONFIG_SAM9X60_DDR2_SIP_EB) || defined(CONFIG_SAM9X60_SDR_SIP_EB)
+	/* sam9x60ek ; sam9x60 ddr2 sip eb and sam9x60 sdr sip eb
+	 */
+	board_id_ek = BOARD_ID_SAM9X60_EK;
+	vendor_ek = VENDOR_MCHIP_RDC;
 #else
 #error "OneWire: No defined board"
 #endif
@@ -540,6 +557,35 @@ static unsigned int set_default_rev(void)
 	rev_id_cm = '1';
 	rev_id_dm = '1';
 	rev_id_ek = '1';
+
+#elif defined(CONFIG_SAMA5D2_ICP)
+	rev_cm = 'A';
+	rev_dm = 'A';
+	rev_ek = 'A';
+	rev_id_cm = '1';
+	rev_id_dm = '1';
+	rev_id_ek = '1';
+#elif defined(CONFIG_SAM9X60EK)
+	rev_cm = 'A';
+	rev_dm = 'A';
+	rev_ek = 'A';
+	rev_id_cm = '0';
+	rev_id_dm = '0';
+	rev_id_ek = '0';
+#elif defined(CONFIG_SAM9X60_DDR2_SIP_EB)
+	rev_cm = 'A';
+	rev_dm = 'A';
+	rev_ek = 'A';
+	rev_id_cm = '0';
+	rev_id_dm = '0';
+	rev_id_ek = '0';
+#elif defined(CONFIG_SAM9X60_SDR_SIP_EB)
+	rev_cm = 'A';
+	rev_dm = 'A';
+	rev_ek = 'A';
+	rev_id_cm = '0';
+	rev_id_dm = '0';
+	rev_id_ek = '0';
 #else
 #error "OneWire: No defined board"
 #endif
@@ -663,6 +709,10 @@ static int load_eeprom_info(unsigned char *buff, unsigned int size,
 
 	if (construct_sn_rev(bd_info, psn, prev))
 		return -1;
+
+	dbg_info("EEPROM: BoardDate | Year | Week\n");
+	dbg_info("EEPROM:             %u    %u\n",
+		 2000 + bd_info->year, bd_info->week);
 
 	return 0;
 }

@@ -40,8 +40,11 @@ typedef struct at91_secure_header {
 	unsigned int		reserved[2];
 } at91_secure_header_t;
 
-
-int secure_decrypt(void *data, unsigned int data_length, int is_signed);
 int secure_check(void *data);
+
+#if defined(CONFIG_OCMS_STATIC)
+void ocms_init_keys(void);
+void ocms_enable(void);
+#endif
 
 #endif /* #ifdef __SECURE_H__ */

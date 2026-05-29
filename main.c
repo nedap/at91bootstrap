@@ -46,29 +46,41 @@ static void display_banner (void)
 
 int main(void)
 {
+#if !defined(CONFIG_LOAD_NONE)
 	struct image_info image;
-	int ret;
+#endif
+	int ret = 0;
 
 #ifdef CONFIG_HW_INIT
 	hw_init();
+#endif
+
+#ifdef CONFIG_OCMS_STATIC
+	ocms_init_keys();
+	ocms_enable();
 #endif
 
 #if defined(CONFIG_SCLK)
 #if !defined(CONFIG_SCLK_BYPASS)
 	slowclk_enable_osc32();
 #endif
+#elif defined(CONFIG_SCLK_INTRC)
+	slowclk_switch_rc32();
 #endif
 
 #ifdef CONFIG_BACKUP_MODE
 	ret = backup_mode_resume();
 	if (ret) {
+		/* Backup+Self-Refresh mode detected... */
 #ifdef CONFIG_REDIRECT_ALL_INTS_AIC
 		redirect_interrupts_to_nsaic();
 #endif
 		slowclk_switch_osc32();
 
+		/* ...jump to Linux here */
 		return ret;
 	}
+	usart_puts("Backup mode enabled\n");
 #endif
 
 #ifdef CONFIG_HW_DISPLAY_BANNER
@@ -93,6 +105,7 @@ int main(void)
 	act8945a_suspend_charger();
 #endif
 
+#if !defined(CONFIG_LOAD_NONE) && !defined(CONFIG_SKIP_COPY_IMAGE)
 	init_load_image(&image);
 
 #if defined(CONFIG_SECURE)
@@ -107,6 +120,7 @@ int main(void)
 	image.dest += sizeof(at91_secure_header_t);
 #endif
 
+#endif
 	load_image_done(ret);
 
 #ifdef CONFIG_SCLK
@@ -123,5 +137,9 @@ int main(void)
 	/* point never reached with TZ support */
 #endif
 
+#if !defined(CONFIG_LOAD_NONE)
 	return JUMP_ADDR;
+#else
+	return 0;
+#endif
 }

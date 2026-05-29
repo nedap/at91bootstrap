@@ -30,13 +30,29 @@
 
 void *memcpy(void *dst, const void *src, int cnt)
 {
-	char *d = (char *)dst;
-	const char *s = (const char *)src;
+	char *d;
+	const char *s;
+	struct chunk {
+		unsigned long val[2];
+	};
+
+	const struct chunk *csrc = (const struct chunk *) src;
+	struct chunk *cdst = (struct chunk *)dst;
+
+	if (((unsigned long)src & 0xf) == 0 && ((unsigned long)dst & 0xf) == 0) {
+		while (cnt >= sizeof(struct chunk)) {
+			*cdst++ = *csrc++;
+			cnt -= sizeof(struct chunk);
+		}
+	}
+
+	d = (char *) cdst;
+	s = (const char *) csrc;
 
 	while (cnt--)
 		*d++ = *s++;
 
-	return d;
+	return dst;
 }
 
 void *memset(void *dst, int val, int cnt)
@@ -46,7 +62,7 @@ void *memset(void *dst, int val, int cnt)
 	while (cnt--)
 		*d++ = (char)val;
 
-	return d;
+	return dst;
 }
 
 int memcmp(const void *dst, const void *src, unsigned int cnt)

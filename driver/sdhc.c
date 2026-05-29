@@ -32,6 +32,8 @@
 #include "timer.h"
 #include "debug.h"
 #include "pmc.h"
+#include "sdhc.h"
+#include "sdhc_cal.h"
 
 /*
  * Registers Definitions
@@ -100,7 +102,7 @@
 /* 0x224 ~ 0x22c: Reserved */
 #define	SDMMC_CACR	0x230	/* Capabilities Control Register */
 /* 0x234 ~ 0x23c: Reserved */
-#define	SDMMC_CALCR	0x240	/* Calibration Control Register */
+/* SDMMC_CACR register definition moved to sdhc_cal.h file */
 /* 0x224 ~ 0x2fc: Reserved */
 
 /*
@@ -272,6 +274,8 @@
 
 /*---------------------------------------------------------------*/
 
+static struct sd_host sdhc_host;
+
 static unsigned int sdhc_get_base(void)
 {
 	return CONFIG_SYS_BASE_SDHC;
@@ -307,7 +311,7 @@ static void sdhc_writeb(unsigned int reg, unsigned char value)
 	writeb(value, sdhc_get_base() + reg);
 }
 
-static void sdhc_softare_reset(void)
+static void sdhc_software_reset(void)
 {
 	sdhc_writeb(SDMMC_SRR, SDMMC_SRR_SWRSTALL);
 
@@ -315,7 +319,7 @@ static void sdhc_softare_reset(void)
 		;
 }
 
-static void sdhc_softare_reset_cmd(void)
+static void sdhc_software_reset_cmd(void)
 {
 	sdhc_writeb(SDMMC_SRR, SDMMC_SRR_SWRSTCMD);
 
@@ -323,7 +327,7 @@ static void sdhc_softare_reset_cmd(void)
 		;
 }
 
-static void sdhc_softare_reset_dat(void)
+static void sdhc_software_reset_dat(void)
 {
 	sdhc_writeb(SDMMC_SRR, SDMMC_SRR_SWRSTDAT);
 
@@ -388,7 +392,7 @@ static int sdhc_set_clock(struct sd_card *sdcard, unsigned int clock)
 	sdhc_writew(SDMMC_CCR, SDMMC_CCR_INTCLKEN | clk_gen_sel
 			| ((clk_div & 0xff) << SDMMC_CCR_SDCLKFSEL_OFFSET)
 			| (((clk_div >> 8) & SDMMC_CCR_USDCLKFSEL_MSK)
-					< SDMMC_CCR_USDCLKFSEL_OFFSET));
+					<< SDMMC_CCR_USDCLKFSEL_OFFSET));
 
 	timeout = 1000000;
 	while ((--timeout) && (!(sdhc_readw(SDMMC_CCR) & SDMMC_CCR_INTCLKS)))
@@ -432,7 +436,18 @@ static int sdhc_set_bus_width(struct sd_card *sdcard, unsigned int width)
 		reg &= ~SDMMC_HC1R_DW;
 	}
 	sdhc_writeb(SDMMC_HC1R, reg);
+	sdcard->configured_bus_w = width;
 
+	return 0;
+}
+
+static int sdhc_set_ddr(struct sd_card *sdcard)
+{
+	if (!sdcard->host->caps_ddr)
+		return -1;
+
+	sdhc_writeb(SDMMC_MC1R, sdhc_readb(SDMMC_MC1R) | SDMMC_MC1R_DDR);
+	sdcard->ddr = 1;
 	return 0;
 }
 
@@ -441,7 +456,7 @@ static int sdhc_host_capability(struct sd_card *sdcard)
 	struct sd_host *host = sdcard->host;
 	unsigned int caps;
 
-	host->caps_max_clock = pmc_get_generated_clock(CONFIG_SYS_ID_SDHC);
+	host->caps_max_clock = pmc_get_generic_clock(CONFIG_SYS_ID_SDHC);
 	host->caps_min_clock = host->caps_max_clock / 2048;
 
 	caps = sdhc_readl(SDMMC_CA0R);
@@ -451,10 +466,19 @@ static int sdhc_host_capability(struct sd_card *sdcard)
 		host->caps_bus_width |= BUS_WIDTH_8_BIT;
 
 	host->caps_high_speed = 0;
+	host->caps_ddr = 0;
+	host->caps_adma2 = 0;
 	if (caps & SDMMC_CA0R_HSSUP)
 		host->caps_high_speed = 1;
+#if !defined(CONFIG_SDHC_NODMA)
+	if (caps & SDMMC_CA0R_ADMA2SUP) {
+		dbg_printf("MMC: ADMA supported\n");
+		host->caps_adma2 = 1;
+	}
+#endif
 
 	host->caps_voltages = 0;
+
 	if (caps & SDMMC_CA0R_V33VSUP)
 		host->caps_voltages |= SD_OCR_VDD_32_33 | SD_OCR_VDD_33_34;
 	if (caps & SDMMC_CA0R_V30VSUP)
@@ -466,6 +490,8 @@ static int sdhc_host_capability(struct sd_card *sdcard)
 
 	host->caps_clk_mult = (caps >> SDMMC_CA1R_CLKMULT_OFFSET)
 						& SDMMC_CA1R_CLKMULT_MSK;
+	if (caps & SDMMC_CA1R_DDR50SUP)
+		host->caps_ddr = 1;
 
 	return 0;
 }
@@ -520,7 +546,7 @@ static int sdhc_init(struct sd_card *sdcard)
 {
 	unsigned int normal_status_mask, error_status_mask;
 
-	sdhc_softare_reset();
+	sdhc_software_reset();
 
 	sdhc_set_power();
 
@@ -534,8 +560,10 @@ static int sdhc_init(struct sd_card *sdcard)
 	normal_status_mask = SDMMC_NISTR_CMDC
 				| SDMMC_NISTR_TRFC
 				| SDMMC_NISTR_BWRRDY
-				| SDMMC_NISTR_BRDRDY;
-	error_status_mask = SDMMC_EISTR_CMDTEO
+				| SDMMC_NISTR_BRDRDY
+				| SDMMC_NISTR_DMAINT;
+	error_status_mask = SDMMC_EISTR_ADMA
+				| SDMMC_EISTR_CMDTEO
 				| SDMMC_EISTR_CMDCRC
 				| SDMMC_EISTR_CMDEND
 				| SDMMC_EISTR_CMDIDX
@@ -557,12 +585,15 @@ static int sdhc_init(struct sd_card *sdcard)
 
 static int sdhc_read_data(struct sd_data *data)
 {
-	unsigned int normal_status, error_status;
+	unsigned short normal_status, error_status;
+	unsigned int psr;
 	unsigned int timeout;
-	unsigned int i, block = 0;
+	unsigned int block = 0;
+	unsigned short i;
 	unsigned int *tmp;
+	int done = 0;
 
-	timeout = 1000000;
+	timeout = 100000;
 	do {
 		normal_status = sdhc_readw(SDMMC_NISTR);
 
@@ -573,16 +604,22 @@ static int sdhc_read_data(struct sd_data *data)
 
 			sdhc_writew(SDMMC_EISTR, error_status);
 
-			sdhc_softare_reset_dat();
+			sdhc_software_reset_dat();
 
-			dbg_info("SDHC: Error detected in status\n");
+			dbg_info("SDHC: Error detected in status: %x, %x\n",
+				normal_status, error_status);
 
 			return -1;
 		}
-
-		if (normal_status & SDMMC_NISTR_BRDRDY) {
-			if (!(sdhc_readl(SDMMC_PSR) & SDMMC_PSR_BUFRDEN))
-				continue;
+		if (((normal_status & SDMMC_NISTR_BRDRDY) ||
+			(normal_status & SDMMC_NISTR_BWRRDY)) && !done ) {
+			psr = sdhc_readl(SDMMC_PSR);
+			if (data->direction == SD_DATA_DIR_RD &&
+				!(psr & SDMMC_PSR_BUFRDEN))
+			continue;
+			if (data->direction == SD_DATA_DIR_WR &&
+				!(psr & SDMMC_PSR_BUFWREN))
+			continue;
 
 			tmp = (unsigned int *)data->buff;
 			for (i = 0; i < data->blocksize; i += 4) {
@@ -593,19 +630,46 @@ static int sdhc_read_data(struct sd_data *data)
 			}
 
 			data->buff += data->blocksize;
-			if (++block >= data->blocks)
-				break;
+			if (++block >= data->blocks) {
+				done = 1;
+				goto sdhc_read_data_reset;
+			}
 		}
 
 		if (timeout-- > 0) {
 			udelay(10);
 		} else {
-			dbg_info("SDHC: Transfer data timeout\n");
-			return -1;
+			dbg_loud("SDHC: Transfer data timeout\n");
+			goto sdhc_read_data_reset;
 		}
-	} while (!(normal_status & SDMMC_NISTR_TRFC));
+	} while (!(normal_status & SDMMC_NISTR_TRFC) && !done);
 
 	return 0;
+
+sdhc_read_data_reset:
+	/* There is an issue when writing data,
+	 * even after the whole data has been written, the SDMMC will not
+	 * trigger TRFC in some cases. Check for WTACT for that.
+	 * In this case we use a sw workaround to reset the
+	 * CMD and DAT lines from SRR and clear the interrupts
+	 * Otherwise we are never getting inhibits bits back on
+	 */
+	if (data->direction == SD_DATA_DIR_WR &&
+		(sdhc_readl(SDMMC_PSR) & SDMMC_PSR_WTACT)) {
+		/* wait for BWRRDY to be cleared */
+		unsigned int timeout2 = 10000;
+		do {
+			normal_status = sdhc_readw(SDMMC_NISTR);
+		} while (timeout2-- && (normal_status & SDMMC_NISTR_BWRRDY));
+	}
+
+	error_status = sdhc_readw(SDMMC_EISTR);
+	sdhc_software_reset_dat();
+	sdhc_software_reset_cmd();
+	sdhc_writew(SDMMC_EISTR, error_status);
+	sdhc_writew(SDMMC_NISTR, normal_status);
+
+	return -1;
 }
 
 static int sdhc_send_command(struct sd_command *sd_cmd, struct sd_data *data)
@@ -615,6 +679,7 @@ static int sdhc_send_command(struct sd_command *sd_cmd, struct sd_data *data)
 	unsigned int i;
 	int ret;
 	unsigned int timeout;
+	struct adma_desc dma_desc[16] = {0};
 
 	timeout = 100000;
 	while ((--timeout) &&
@@ -651,17 +716,50 @@ static int sdhc_send_command(struct sd_command *sd_cmd, struct sd_data *data)
 	}
 
 	if (data) {
+		if (sdhc_host.caps_adma2 && (sd_cmd->cmd == SD_CMD_READ_SINGLE_BLOCK ||
+		    sd_cmd->cmd == SD_CMD_READ_MULTIPLE_BLOCK)) {
+			/* for CMD17 and CMD18 we use ADMA2 */
+			sdhc_writeb(SDMMC_HC1R, sdhc_readb(SDMMC_HC1R) |
+						SDMMC_HC1R_DMASEL_ADMA32);
+		}
+
 		cmd_reg |= SDMMC_CR_DPSEL;
 
 		mode = SDMMC_TMR_BCEN;
 		mode |= (data->blocks > 1) ? SDMMC_TMR_MSBSEL : 0;
 		mode |= (data->direction == SD_DATA_DIR_RD) ? SDMMC_TMR_DTDSEL_READ : 0;
 
+		if (sdhc_host.caps_adma2 && (sd_cmd->cmd == SD_CMD_READ_SINGLE_BLOCK ||
+		    sd_cmd->cmd == SD_CMD_READ_MULTIPLE_BLOCK))
+			mode |= SDMMC_TMR_DMAEN;
+
 		sdhc_writeb(SDMMC_TCR, 0xe);
 		sdhc_writew(SDMMC_BSR, data->blocksize);
 		if (data->blocks > 1)
 			sdhc_writew(SDMMC_BCR, data->blocks);
+
 		sdhc_writew(SDMMC_TMR, mode);
+
+		/* for CMD17 and CMD18 we use ADMA to transfer faster */
+		if (sdhc_host.caps_adma2 && (sd_cmd->cmd == SD_CMD_READ_SINGLE_BLOCK ||
+		    sd_cmd->cmd == SD_CMD_READ_MULTIPLE_BLOCK)) {
+			/* prepare descriptor table */
+			if (data->blocks > 16 )
+				dbg_printf("too many blocks requested at once, error\n");
+
+			for (i = 0; i < data->blocks; i++) {
+				/* last descriptor must have the end bit */
+				if (i == data->blocks - 1)
+					dma_desc[i].cmd = 0x23;
+				else
+					dma_desc[i].cmd = 0x21;
+
+				dma_desc[i].len = data->blocksize;
+				dma_desc[i].addr = (unsigned int)(data->buff + data->blocksize * i);
+			}
+		/* address of the first descriptor goes here */
+		sdhc_writel(SDMMC_ASAR0, (unsigned int) &dma_desc[0]);
+		}
 	}
 
 	sdhc_writel(SDMMC_ARG1R, sd_cmd->argu);
@@ -671,15 +769,18 @@ static int sdhc_send_command(struct sd_command *sd_cmd, struct sd_data *data)
 	timeout = 100000;
 	do {
 		normal_status = sdhc_readw(SDMMC_NISTR);
-		if (normal_status & SDMMC_NISTR_ERRINT)
-			break;
 	} while ((--timeout) &&
 		 ((normal_status & normal_status_mask) != normal_status_mask));
 
 	if (!timeout)
-		dbg_info("SDHC: Timeout waiting for command complete\n");
+		dbg_very_loud("SDHC: Timeout waiting for command complete\n");
 
-	sdhc_writew(SDMMC_NISTR, normal_status);
+	/* clear the status, except for read and write ready.
+	 * those will be cleared by the read/write data routine, which
+	 * bases itself on the fact that the hardware is ready to receive data
+	 * or has data ready to be read
+	 */
+	sdhc_writew(SDMMC_NISTR, normal_status & ~ (SDMMC_NISTR_BWRRDY | SDMMC_NISTR_BRDRDY));
 
 	if ((normal_status & normal_status_mask) == normal_status_mask) {
 		if (sd_cmd->resp_type == SD_RESP_TYPE_R2) {
@@ -689,14 +790,30 @@ static int sdhc_send_command(struct sd_command *sd_cmd, struct sd_data *data)
 			*sd_cmd->resp = sdhc_readl(SDMMC_RR0);
 		}
 
-		if (data)
+		/* if we have data but not using block transfer, we use PIO mode */
+		if (data && (!sdhc_host.caps_adma2 || (sd_cmd->cmd != SD_CMD_READ_SINGLE_BLOCK &&
+		    sd_cmd->cmd != SD_CMD_READ_MULTIPLE_BLOCK))) {
 			sdhc_read_data(data);
+		} else if (data && sdhc_host.caps_adma2) {
+			/* otherwise, ADMA will carry the data for us */
+			/* Let's wait for ADMA to finish transferring */
+			timeout = 1000000;
+			do {
+				normal_status = sdhc_readw(SDMMC_NISTR);
+				udelay(1);
+			} while (--timeout && !(normal_status & SDMMC_NISTR_TRFC));
+			if (!timeout)
+				console_printf("SDHC: Timeout waiting for ADMA\n");
+
+			sdhc_writew(SDMMC_NISTR, SDMMC_NISTR_TRFC);
+			error_status = sdhc_readw(SDMMC_EISTR);
+		}
 
 		ret = 0;
 	} else {
 		error_status = sdhc_readw(SDMMC_EISTR);
 
-		sdhc_softare_reset_cmd();
+		sdhc_software_reset_cmd();
 
 		sdhc_writew(SDMMC_EISTR, error_status);
 
@@ -709,13 +826,12 @@ static int sdhc_send_command(struct sd_command *sd_cmd, struct sd_data *data)
 	return ret;
 }
 
-static struct sd_host sdhc_host;
-
 static struct host_ops sdhc_ops = {
 	.init = sdhc_init,
 	.send_command = sdhc_send_command,
 	.set_clock = sdhc_set_clock,
 	.set_bus_width = sdhc_set_bus_width,
+	.set_ddr = sdhc_set_ddr,
 };
 
 int sdcard_register_sdhc(struct sd_card *sdcard)

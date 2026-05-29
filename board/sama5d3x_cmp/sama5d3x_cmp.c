@@ -37,7 +37,7 @@
 #include "watchdog.h"
 #include "string.h"
 
-#include "arch/at91_pmc.h"
+#include "arch/at91_pmc/pmc.h"
 #include "arch/at91_rstc.h"
 #include "arch/sama5_smc.h"
 #include "arch/at91_pio.h"
@@ -55,10 +55,10 @@ static void at91_dbgu_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOB);
+	pmc_enable_periph_clock(AT91C_ID_PIOB, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(dbgu_pins);
 
-	pmc_enable_periph_clock(AT91C_ID_DBGU);
+	pmc_enable_periph_clock(AT91C_ID_DBGU, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 
 static void initialize_dbgu(void)
@@ -120,7 +120,7 @@ static void lpddr2_init(void)
 
 	lpddr2_reg_config(&ddramc_reg);
 
-	pmc_enable_periph_clock(AT91C_ID_MPDDRC);
+	pmc_enable_periph_clock(AT91C_ID_MPDDRC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pmc_enable_system_clock(AT91C_PMC_DDR);
 
 	/*
@@ -168,7 +168,7 @@ static void one_wire_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOE);
+	pmc_enable_periph_clock(AT91C_ID_PIOE, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(one_wire_pio);
 }
 
@@ -193,10 +193,12 @@ void hw_init(void)
 	pmc_init_pll(AT91C_PMC_IPLLA_3);
 
 	/* Switch PCK/MCK on Main clock output */
-	pmc_cfg_mck(BOARD_PRESCALER_MAIN_CLOCK);
+	pmc_mck_cfg_set(0, BOARD_PRESCALER_MAIN_CLOCK,
+			AT91C_PMC_MDIV | AT91C_PMC_CSS);
 
 	/* Switch PCK/MCK on PLLA output */
-	pmc_cfg_mck(BOARD_PRESCALER_PLLA);
+	pmc_mck_cfg_set(0, BOARD_PRESCALER_PLLA,
+			AT91C_PMC_MDIV | AT91C_PMC_CSS);
 
 	/* Initialize timer */
 	timer_init();
@@ -213,6 +215,10 @@ void hw_init(void)
 
 	/* Reset HDMI SiI9022 */
 	SiI9022_hw_reset();
+
+#if defined(CONFIG_TWI)
+	twi_init();
+#endif
 }
 #endif /* #ifdef CONFIG_HW_INIT */
 
@@ -227,10 +233,10 @@ void at91_spi0_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOD);
+	pmc_enable_periph_clock(AT91C_ID_PIOD, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(spi0_pins);
 
-	pmc_enable_periph_clock(AT91C_ID_SPI0);
+	pmc_enable_periph_clock(AT91C_ID_SPI0, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 #endif /* #ifdef CONFIG_DATAFLASH */
 
@@ -259,10 +265,10 @@ void at91_mci0_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_HSMCI0);
+	pmc_enable_periph_clock(AT91C_ID_HSMCI0, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(mci_pins);
 
-	pmc_enable_periph_clock(AT91C_ID_HSMCI0);
+	pmc_enable_periph_clock(AT91C_ID_HSMCI0, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 #endif /* #ifdef CONFIG_SDCARD */
 
@@ -275,10 +281,10 @@ void nandflash_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOE);
+	pmc_enable_periph_clock(AT91C_ID_PIOE, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(nand_pins);
 
-	pmc_enable_periph_clock(AT91C_ID_SMC);
+	pmc_enable_periph_clock(AT91C_ID_SMC, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	writel(AT91C_SMC_SETUP_NWE(1)
 		| AT91C_SMC_SETUP_NCS_WR(1)
@@ -328,9 +334,9 @@ unsigned int at91_eth0_hw_init(void)
 	};
 
 	pio_configure(macb_pins);
-	pmc_enable_periph_clock(AT91C_ID_PIOB);
+	pmc_enable_periph_clock(AT91C_ID_PIOB, PMC_PERIPH_CLK_DIVIDER_NA);
 
-	pmc_enable_periph_clock(AT91C_ID_GMAC);
+	pmc_enable_periph_clock(AT91C_ID_GMAC, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return base_addr;
 }
@@ -348,9 +354,9 @@ unsigned int at91_eth1_hw_init(void)
 	};
 
 	pio_configure(macb_pins);
-	pmc_enable_periph_clock(AT91C_ID_PIOC);
+	pmc_enable_periph_clock(AT91C_ID_PIOC, PMC_PERIPH_CLK_DIVIDER_NA);
 
-	pmc_enable_periph_clock(AT91C_ID_EMAC);
+	pmc_enable_periph_clock(AT91C_ID_EMAC, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return base_addr;
 }
@@ -368,6 +374,7 @@ void at91_disable_mac_clock(void)
 }
 #endif
 
+#if defined(CONFIG_TWI)
 #if defined(CONFIG_AUTOCONFIG_TWI_BUS)
 void at91_board_config_twi_bus(void)
 {
@@ -392,7 +399,6 @@ void at91_board_config_twi_bus(void)
 }
 #endif
 
-#if defined(CONFIG_TWI0)
 unsigned int at91_twi0_hw_init(void)
 {
 	unsigned int base_addr = AT91C_BASE_TWI0;
@@ -404,15 +410,13 @@ unsigned int at91_twi0_hw_init(void)
 	};
 
 	pio_configure(twi_pins);
-	pmc_enable_periph_clock(AT91C_ID_PIOA);
+	pmc_enable_periph_clock(AT91C_ID_PIOA, PMC_PERIPH_CLK_DIVIDER_NA);
 
-	pmc_enable_periph_clock(AT91C_ID_TWI0);
+	pmc_enable_periph_clock(AT91C_ID_TWI0, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return base_addr;
 }
-#endif
 
-#if defined(CONFIG_TWI1)
 unsigned int at91_twi1_hw_init(void)
 {
 	unsigned int base_addr = AT91C_BASE_TWI1;
@@ -424,15 +428,13 @@ unsigned int at91_twi1_hw_init(void)
 	};
 
 	pio_configure(twi_pins);
-	pmc_enable_periph_clock(AT91C_ID_PIOC);
+	pmc_enable_periph_clock(AT91C_ID_PIOC, PMC_PERIPH_CLK_DIVIDER_NA);
 
-	pmc_enable_periph_clock(AT91C_ID_TWI1);
+	pmc_enable_periph_clock(AT91C_ID_TWI1, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	return base_addr;
 }
-#endif
 
-#if defined(CONFIG_TWI2)
 unsigned int at91_twi2_hw_init(void)
 {
 	return 0;
@@ -454,14 +456,14 @@ int at91_board_act8865_set_reg_voltage(void)
 	value = ACT8865_3V3;
 	ret = act8865_set_reg_voltage(reg, value);
 	if (ret)
-		dbg_loud("ACT8865: Failed to make REG4 output 3300mV\n");
+		console_printf("ACT8865: Failed to make REG4 output 3300mV\n");
 
 	/* Enable REG2 output 1.25V */
 	reg = REG2_0;
 	value = ACT8865_1V25;
 	ret = act8865_set_reg_voltage(reg, value);
 	if (ret)
-		dbg_loud("ACT8865: Failed to make REG2 output 1250mV\n");
+		console_printf("ACT8865: Failed to make REG2 output 1250mV\n");
 
 	return 0;
 }
@@ -476,9 +478,23 @@ void at91_disable_smd_clock(void)
 	 */
 	pmc_enable_system_clock(AT91C_PMC_SMDCK);
 	pmc_set_smd_clock_divider(AT91C_PMC_SMDDIV);
-	pmc_enable_periph_clock(AT91C_ID_SMD);
+	pmc_enable_periph_clock(AT91C_ID_SMD, PMC_PERIPH_CLK_DIVIDER_NA);
 	writel(0xF, (0x0C + AT91C_BASE_SMD));
 	pmc_disable_periph_clock(AT91C_ID_SMD);
 	pmc_disable_system_clock(AT91C_PMC_SMDCK);
+}
+#endif
+
+
+#if defined(CONFIG_TWI)
+void twi_init()
+{
+	twi_bus_init(at91_twi0_hw_init);
+	twi_bus_init(at91_twi1_hw_init);
+	twi_bus_init(at91_twi2_hw_init);
+#if defined(CONFIG_AUTOCONFIG_TWI_BUS)
+	dbg_loud("Auto-Config the TWI Bus by the board\n");
+	at91_board_config_twi_bus();
+#endif
 }
 #endif

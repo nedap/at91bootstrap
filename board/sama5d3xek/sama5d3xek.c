@@ -38,7 +38,7 @@
 #include "string.h"
 #include "board_hw_info.h"
 
-#include "arch/at91_pmc.h"
+#include "arch/at91_pmc/pmc.h"
 #include "arch/at91_rstc.h"
 #include "arch/sama5_smc.h"
 #include "arch/at91_pio.h"
@@ -55,11 +55,11 @@ static void at91_dbgu_hw_init(void)
 	};
 
 	/*  Configure the dbgu pins */
-	pmc_enable_periph_clock(AT91C_ID_PIOB);
+	pmc_enable_periph_clock(AT91C_ID_PIOB, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(dbgu_pins);
 
 	/* Enable clock */
-	pmc_enable_periph_clock(AT91C_ID_DBGU);
+	pmc_enable_periph_clock(AT91C_ID_DBGU, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 
 static void initialize_dbgu(void)
@@ -77,8 +77,8 @@ static void ddramc_reg_config(struct ddramc_register *ddramc_config)
 	ddramc_config->cr = (AT91C_DDRC2_NC_DDR10_SDR9
 				| AT91C_DDRC2_NR_14
 				| AT91C_DDRC2_CAS_3
-				| AT91C_DDRC2_DLL_RESET_DISABLED /* DLL not reset */
-				| AT91C_DDRC2_DIS_DLL_DISABLED   /* DLL not disabled */
+				| AT91C_DDRC2_DISABLE_RESET_DLL
+				| AT91C_DDRC2_ENABLE_DLL
 				| AT91C_DDRC2_ENRDM_ENABLE       /* Phase error correction is enabled */
 				| AT91C_DDRC2_NB_BANKS_8
 				| AT91C_DDRC2_NDQS_DISABLED      /* NDQS disabled (check on schematics) */
@@ -181,7 +181,7 @@ static void ddramc_init(void)
 	ddramc_reg_config(&ddramc_reg);
 
 	/* enable ddr2 clock */
-	pmc_enable_periph_clock(AT91C_ID_MPDDRC);
+	pmc_enable_periph_clock(AT91C_ID_MPDDRC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pmc_enable_system_clock(AT91C_PMC_DDR);
 
 	/* Init the special register for sama5d3x */
@@ -262,7 +262,7 @@ static void lpddr2_init(void)
 	lpddr2_reg_config(&ddramc_reg);
 
 	/* enable ddr2 clock */
-	pmc_enable_periph_clock(AT91C_ID_MPDDRC);
+	pmc_enable_periph_clock(AT91C_ID_MPDDRC, PMC_PERIPH_CLK_DIVIDER_NA);
 	pmc_enable_system_clock(AT91C_PMC_DDR);
 
 	/* Init the special register for sama5d3x */
@@ -305,7 +305,7 @@ static void one_wire_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOE);
+	pmc_enable_periph_clock(AT91C_ID_PIOE, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(one_wire_pio);
 }
 
@@ -318,7 +318,7 @@ static void recovery_buttons_hw_init(void)
 		{(char *)0, 0, 0, PIO_DEFAULT, PIO_PERIPH_A},
 	};
 
-	pmc_enable_periph_clock(AT91C_ID_PIOE);
+	pmc_enable_periph_clock(AT91C_ID_PIOE, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(recovery_button_pins);
 }
 #endif /* #if defined(CONFIG_NANDFLASH_RECOVERY) || defined(CONFIG_DATAFLASH_RECOVERY) */
@@ -347,7 +347,7 @@ static void at91_special_pio_output_low(void)
 	base = AT91C_BASE_PIOB;
 	value = GMAC_PINS;
 
-	writel((1 << AT91C_ID_PIOB), (PMC_PCER + AT91C_BASE_PMC));
+	pmc_enable_periph_clock(AT91C_ID_PIOB, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	writel(value, base + PIO_REG_PPUDR);	/* PIO_PPUDR */
 	writel(value, base + PIO_REG_PPDDR);	/* PIO_PPDDR */
@@ -358,7 +358,7 @@ static void at91_special_pio_output_low(void)
 	base = AT91C_BASE_PIOC;
 	value = EMAC_PINS;
 
-	writel((1 << AT91C_ID_PIOC), (PMC_PCER + AT91C_BASE_PMC));
+	pmc_enable_periph_clock(AT91C_ID_PIOC, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	writel(value, base + PIO_REG_PPUDR);	/* PIO_PPUDR */
 	writel(value, base + PIO_REG_PPDDR);	/* PIO_PPDDR */
@@ -398,10 +398,12 @@ void hw_init(void)
 	pmc_init_pll(AT91C_PMC_IPLLA_3);
 
 	/* Switch PCK/MCK on Main clock output */
-	pmc_cfg_mck(BOARD_PRESCALER_MAIN_CLOCK);
+	pmc_mck_cfg_set(0, BOARD_PRESCALER_MAIN_CLOCK,
+			AT91C_PMC_MDIV | AT91C_PMC_CSS);
 
 	/* Switch PCK/MCK on PLLA output */
-	pmc_cfg_mck(BOARD_PRESCALER_PLLA);
+	pmc_mck_cfg_set(0, BOARD_PRESCALER_PLLA,
+			AT91C_PMC_MDIV | AT91C_PMC_CSS);
 
 	/* Set GMAC & EMAC pins to output low */
 	at91_special_pio_output_low();
@@ -457,11 +459,11 @@ void at91_spi0_hw_init(void)
 	};
 
 	/* Configure the PIO controller */
-	pmc_enable_periph_clock(AT91C_ID_PIOD);
+	pmc_enable_periph_clock(AT91C_ID_PIOD, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(spi0_pins);
 
 	/* Enable the clock */
-	pmc_enable_periph_clock(AT91C_ID_SPI0);
+	pmc_enable_periph_clock(AT91C_ID_SPI0, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 #endif /* #ifdef CONFIG_DATAFLASH */
 
@@ -523,11 +525,11 @@ void at91_mci0_hw_init(void)
 	};
 
 	/* Configure the PIO controller */
-	pmc_enable_periph_clock(AT91C_ID_PIOD);
+	pmc_enable_periph_clock(AT91C_ID_PIOD, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(mci_pins);
 
 	/* Enable the clock */
-	pmc_enable_periph_clock(AT91C_ID_HSMCI0);
+	pmc_enable_periph_clock(AT91C_ID_HSMCI0, PMC_PERIPH_CLK_DIVIDER_NA);
 }
 #endif /* #ifdef CONFIG_SDCARD */
 
@@ -563,7 +565,7 @@ void norflash_hw_init(void)
 	};
 
 	/* Enable the clock */
-	pmc_enable_periph_clock(AT91C_ID_SMC);
+	pmc_enable_periph_clock(AT91C_ID_SMC, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	/* Configure SMC CS0 for NOR flash */
 	writel(AT91C_SMC_SETUP_NWE(1)
@@ -614,11 +616,11 @@ void nandflash_hw_init(void)
 	};
 
 	/* Configure the nand controller pins*/
-	pmc_enable_periph_clock(AT91C_ID_PIOE);
+	pmc_enable_periph_clock(AT91C_ID_PIOE, PMC_PERIPH_CLK_DIVIDER_NA);
 	pio_configure(nand_pins);
 
 	/* Enable the clock */
-	pmc_enable_periph_clock(AT91C_ID_SMC);
+	pmc_enable_periph_clock(AT91C_ID_SMC, PMC_PERIPH_CLK_DIVIDER_NA);
 
 	/* Configure SMC CS3 for NAND/SmartMedia */
 	writel(AT91C_SMC_SETUP_NWE(1)

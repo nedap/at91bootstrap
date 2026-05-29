@@ -42,7 +42,9 @@
 #define	QSPI_SCR	0x20	/* Serial Clock Register */
 #define	QSPI_IAR	0x30	/* Instruction Address Register */
 #define	QSPI_ICR	0x34	/* Instruction Code Register */
+#define	QSPI_WICR	0x34	/* Write Instruction Code Register */
 #define	QSPI_IFR	0x38	/* Instruction Frame Register */
+#define	QSPI_RICR	0x3c	/* Read Instruction Code Register */
 /* 0x3c Reserved */
 #define	QSPI_SMR	0x40	/* Scrambling Mode Register */
 #define	QSPI_SKR	0x44	/* Scrambling Key Register */
@@ -62,7 +64,7 @@
 #define	QSPI_CR_LASTXFER	(0x1 << 24)	/* Last Transfer */
 
 /* QSPI_MR */
-#define	QSPI_MR_SMM		(0x1 << 0)	/* Serial Memort Mode */
+#define	QSPI_MR_SMM		(0x1 << 0)	/* Serial Memory Mode */
 #define		QSPI_MR_SMM_SPI		(0x0 << 0)
 #define		QSPI_MR_SMM_MEMORY	(0x1 << 0)
 #define	QSPI_MR_LLB		(0x1 << 1)	/* Local Localback Enable */
@@ -97,12 +99,15 @@
 /* QSPI_SCR */
 #define	QSPI_SCR_CPOL		(0x1 << 0)	/* Clock Polarity */
 #define	QSPI_SCR_CPHA		(0x1 << 1)	/* Clock Phase */
-#define	QSPI_SCR_SCBR_(x)	((x) << 8)	/* Serial Clock Baud Rate */
+#define	QSPI_SCR_SCBR		(0xff << 8)
+#define	QSPI_SCR_SCBR_(x)	(((x) << 8) & QSPI_SCR_SCBR)	/* Serial Clock Baud Rate */
 #define	QSPI_SCR_DLYBS_(x)	((x) << 16)	/* Delay Before QSCK */
 
 /* QSPI_ICR */
-#define	QSPI_ICR_INST_(x)	((x) << 0)	/* Instruction Code */
-#define	QSPI_ICR_OPT_(x)	((x) << 16)	/* Option Code */
+#define QSPI_ICR_INST_MASK     0xff
+#define QSPI_ICR_INST(inst)    ((inst) & QSPI_ICR_INST_MASK)
+#define QSPI_ICR_OPT_MASK      (0xff << 16)
+#define QSPI_ICR_OPT(opt)      (((opt) << 16) & QSPI_ICR_OPT_MASK)
 
 /* QSPI_IFR */
 #define	QSPI_IFR_WIDTH		(0x7 << 0)	/* Width of Instruction Code, Address, Option Code and Data */

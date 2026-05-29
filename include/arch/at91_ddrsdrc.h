@@ -77,6 +77,9 @@
 
 /* -------- HDDRSDRC2_RTR : (HDDRSDRC2 Offset: 0x4) Refresh Timer Register -------- */
 #define AT91C_DDRC2_COUNT	(0xFFFUL << 0)
+#define AT91C_DDRC2_ADJ_REF	(0x1UL << 16)
+#define 	AT91C_DDRC2_DISABLE_ADJ_REF	(0x0UL << 16)
+#define 	AT91C_DDRC2_ENABLE_ADJ_REF	(0x1UL << 16)
 
 /* -------- HDDRSDRC2_CR : (HDDRSDRC2 Offset: 0x8) Configuration Register --------*/
 #define AT91C_DDRC2_NC		(0x3UL <<  0)
@@ -95,15 +98,15 @@
 #define 	AT91C_DDRC2_CAS_4		(0x4UL << 4)
 #define 	AT91C_DDRC2_CAS_5		(0x5UL << 4)
 #define 	AT91C_DDRC2_CAS_6		(0x6UL << 4)
-#define AT91C_DDRC2_DLL		(0x1UL << 7)
-#define 	AT91C_DDRC2_DLL_RESET_DISABLED	(0x0UL << 7)
-#define 	AT91C_DDRC2_DLL_RESET_ENABLED	(0x1UL << 7)
+#define AT91C_DDRC2_RESET_DLL		(0x1UL << 7)
+#define 	AT91C_DDRC2_DISABLE_RESET_DLL	(0x0UL << 7)
+#define 	AT91C_DDRC2_ENABLE_RESET_DLL	(0x1UL << 7)
 #define AT91C_DDRC2_DIC_DS	(0x1UL << 8)
 #define		AT91C_DDRC2_NORMAL_STRENGTH_RZQ6	(0x0UL << 8)
 #define		AT91C_DDRC2_WEAK_STRENGTH_RZQ7		(0x1UL << 8)
-#define AT91C_DDRC2_DIS_DLL	(0x1UL << 9)
-#define 	AT91C_DDRC2_DIS_DLL_DISABLED	(0x0UL << 9)
-#define 	AT91C_DDRC2_DIS_DLL_ENABLED	(0x1UL << 9)
+#define AT91C_DDRC2_DLL	(0x1UL << 9)
+#define 	AT91C_DDRC2_ENABLE_DLL		(0x0UL << 9)
+#define 	AT91C_DDRC2_DISABLE_DLL		(0x1UL << 9)
 #define AT91C_DDRC2_ZQ		(0x03 << 10)
 #define		AT91C_DDRC2_ZQ_INIT		(0x0 << 10)
 #define		AT91C_DDRC2_ZQ_LONG		(0x1 << 10)
@@ -196,6 +199,7 @@
 #define		AT91C_DDRC2_UPD_MR_NO_UPDATE		(0x0UL << 20)
 #define		AT91C_DDRC2_UPD_MR_SHARED_BUS		(0x1UL << 20)
 #define		AT91C_DDRC2_UPD_MR_NO_SHARED_BUS	(0x2UL << 20)
+#define AT91C_DDRC2_SELF_DONE	(0x1UL << 25)
 
 /* -------- HDDRSDRC2_MDR : (HDDRSDRC2 Offset: 0x20) Memory Device Register -------- */
 #define AT91C_DDRC2_MD		(0x7UL << 0)
@@ -228,6 +232,7 @@
 /* -------- MPDDRC_LPDDR2_CAL_MR4: (MPDDRC Offset: 0x2c) Calibration and MR4 Register --------*/
 #define AT91C_DDRC2_COUNT_CAL_MASK	(0xFFFFUL)
 #define AT91C_DDRC2_COUNT_CAL(value)	(((value) & AT91C_DDRC2_COUNT_CAL_MASK) << 0)
+#define AT91C_DDRC2_MR4R(value)		(((value) & 0xFFFFUL) << 16)
 
 /* -------- MPDDRC_LPDDR2_TIM_CAL : (MPDDRC Offset: 0x30) */
 #define AT91C_DDRC2_ZQCS(value)	(value << 0)
@@ -306,5 +311,9 @@
 /* -------- HDDRSDRC2_WPSR : (HDDRSDRC2 Offset: 0xe8) Write Protect Status Register --------*/
 #define AT91C_DDRC2_WPVS	(0x1UL << 0)
 #define AT91C_DDRC2_WPSRC	(0xFFFFUL << 8)
+
+/* -------- MPDDRC_OCMS : (MPDDRC Offset: 0x38 ) Scrambling Enable/Disable --------*/
+#define AT91C_MPDDRC_OCMS_DISABLE	(0x0UL << 0)
+#define AT91C_MPDDRC_OCMS_ENABLE	(0x1UL << 0)
 
 #endif	/* #ifndef __AT91_DDRSDRC_H__ */

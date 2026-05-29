@@ -793,9 +793,10 @@ struct expr *expr_transform(struct expr *e)
              * !a='x' -> a!='x' 
              */
             tmp = e->left.expr;
+            tmp->type = tmp->type == E_EQUAL ? E_UNEQUAL : E_EQUAL;
+            e->left.expr = NULL;
             free(e);
             e = tmp;
-            e->type = e->type == E_EQUAL ? E_UNEQUAL : E_EQUAL;
             break;
         case E_OR:
             /*
@@ -825,10 +826,11 @@ struct expr *expr_transform(struct expr *e)
                  * !'y' -> 'n' 
                  */
                 tmp = e->left.expr;
+                tmp->type = E_SYMBOL;
+                tmp->left.sym = &symbol_no;
+                e->left.expr = NULL;
                 free(e);
                 e = tmp;
-                e->type = E_SYMBOL;
-                e->left.sym = &symbol_no;
                 break;
             }
             if (e->left.expr->left.sym == &symbol_mod) {
@@ -836,10 +838,11 @@ struct expr *expr_transform(struct expr *e)
                  * !'m' -> 'm' 
                  */
                 tmp = e->left.expr;
+                tmp->type = E_SYMBOL;
+                tmp->left.sym = &symbol_mod;
+                e->left.expr = NULL;
                 free(e);
                 e = tmp;
-                e->type = E_SYMBOL;
-                e->left.sym = &symbol_mod;
                 break;
             }
             if (e->left.expr->left.sym == &symbol_no) {
@@ -847,10 +850,11 @@ struct expr *expr_transform(struct expr *e)
                  * !'n' -> 'y' 
                  */
                 tmp = e->left.expr;
+                tmp->type = E_SYMBOL;
+                tmp->left.sym = &symbol_yes;
+                e->left.expr = NULL;
                 free(e);
                 e = tmp;
-                e->type = E_SYMBOL;
-                e->left.sym = &symbol_yes;
                 break;
             }
             break;

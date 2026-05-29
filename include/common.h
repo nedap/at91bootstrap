@@ -33,11 +33,15 @@
 #define ALIGN(size, align)	(((size) + (align) - 1) & (~((align) - 1)))
 #define OF_ALIGN(size)		ALIGN(size, 4)
 
+#define min(a, b)	(((a) < (b)) ? (a) : (b))
+#define max(a, b)	(((a) > (b)) ? (a) : (b))
+
 #ifndef NULL
 #define	NULL	0
 #endif
 
 #define FILENAME_BUF_LEN	32
+#define CMDLINE_BUF_LEN		256
 
 enum {
 	KERNEL_IMAGE,
@@ -53,6 +57,10 @@ struct image_info
 #endif
 #ifdef CONFIG_SDCARD
 	char *filename;
+#ifdef CONFIG_OVERRIDE_CMDLINE_FROM_EXT_FILE
+	char *cmdline_file;
+	char *cmdline_args;
+#endif
 #endif
 	unsigned char *dest;
 

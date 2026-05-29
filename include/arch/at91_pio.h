@@ -29,7 +29,7 @@
 #define __AT91_PIO_H__
 
 /* Register offset in AT91S_PIO structure */
-#ifdef CPU_HAS_PIO4
+#ifdef CONFIG_CPU_HAS_PIO4
 #define	PIO_MSKR	0x0000	/* PIO Mask Register */
 #define	PIO_CFGR	0x0004	/* PIO Configuration Register */
 #define	PIO_PDSR	0x0008	/* PIO Pin Data Status Register */
@@ -84,7 +84,7 @@
 #define PIO_PPUER	0x0064	/* Pull-up Enable Register */
 #define PIO_PPUSR	0x0068	/* Pull-up Status Register */
 /* 0x006c */
-#ifndef CPU_HAS_PIO3
+#ifndef CONFIG_CPU_HAS_PIO3
 #define PIO_ASR		0x0070	/* Peripheral Select Register 1 */
 #define PIO_BSR		0x0074	/* Peripheral Select Register 2 */
 #define PIO_ABSR	0x0078	/* AB Select Status Register */
@@ -97,13 +97,17 @@
 #define PIO_PPDDR	0x0090	/* Pull-down Disable Register */
 #define PIO_PPDER	0x0094	/* Pull-down Enable Register */
 #define PIO_PPDSR	0x0098	/* Pull-down Status Register */
-/* 0x009c */
-#endif	/* #ifndef CPU_HAS_PIO3 */
+/* 0x009c ~ 0x010c */
+#define PIO_SLEWR	0x0110	/* I/O Slewrate Control Register */
+/* 0x0114 */
+#define PIO_DRIVER1	0x0118	/* I/O Drive Register 1 */
+/* 0x011a */
+#endif	/* !CONFIG_CPU_HAS_PIO3 */
 #define PIO_OWER	0x00a0	/* Output Write Enable Register */
 #define PIO_OWDR	0x00a4	/* Output Write Disable Register */
 #define PIO_OWSR	0x00a8	/* Output Write Status Register */
 /* 0x00ac */
-#endif	/* #ifdef CPU_HAS_PIO4 */
+#endif	/* CONFIG_CPU_HAS_PIO4 */
 
 /*
  * Register Field definition
@@ -126,9 +130,9 @@
 #define	AT91C_PIO_CFGR_OPD	(0x01 << 14)	/* Open-Drain */
 #define	AT91C_PIO_CFGR_SCHMITT	(0x01 << 15)	/* Schmitt Trigger*/
 #define	AT91C_PIO_CFGR_DRVSTR	(0x03 << 16)	/* Drive Strength*/
-#define		AT91C_PIO_CFGR_DRVSTR_HIGH	(0x00 << 16)
-#define		AT91C_PIO_CFGR_DRVSTR_MEDIUM	(0x01 << 16)
-#define		AT91C_PIO_CFGR_DRVSTR_LOW	(0x02 << 16)
+#define		AT91C_PIO_CFGR_DRVSTR_HIGH	(0x03 << 16)
+#define		AT91C_PIO_CFGR_DRVSTR_MEDIUM	(0x02 << 16)
+#define		AT91C_PIO_CFGR_DRVSTR_LOW	(0x01 << 16)
 #define	AT91C_PIO_CFGR_EVTSEL	(0x07 << 24)	/* Event Selection */
 #define		AT91C_PIO_CFGR_EVTSEL_FALLING	(0x00 << 24)
 #define		AT91C_PIO_CFGR_EVTSEL_RISING	(0x01 << 24)
@@ -155,4 +159,4 @@
 #define PIO_REG_PPUDR		0x60
 #define	PIO_REG_PPDDR		0x90
 
-#endif /* #ifndef __AT91_PIO_H__ */
+#endif	/* !__AT91_PIO_H__ */
